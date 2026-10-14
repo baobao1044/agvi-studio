@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" fill="none">
+  <rect width="1200" height="360" rx="16" fill="#09090B" stroke="#27272A" stroke-width="2" />
+
+  <!-- Header -->
+  <text x="40" y="42" fill="#10B981" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="11" font-weight="800" letter-spacing="1.5">SYSTEM ARCHITECTURE • END-TO-END AGENTIC VIDEO PIPELINE</text>
+  <text x="40" y="68" fill="#FAFAFA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="800">How AI Agents Build Broadcast-Grade Videos with AGVI Studio</text>
+
+  <!-- Step 1: AI Agent / Prompt -->
+  <rect x="36" y="100" width="248" height="220" rx="12" fill="#121216" stroke="#27272A" stroke-width="1.5" />
+  <rect x="52" y="118" width="68" height="22" rx="4" fill="#10B981" fill-opacity="0.15" />
+  <text x="62" y="133" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10" font-weight="800">STEP 01</text>
+  <text x="52" y="164" fill="#FAFAFA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16" font-weight="800">AI Agent or Prompt</text>
+  <text x="52" y="186" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">Claude, GPT, Gemini, MCP,</text>
+  <text x="52" y="204" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">or Natural Language Script.</text>
+  <rect x="52" y="224" width="216" height="76" rx="6" fill="#09090B" stroke="#27272A" stroke-width="1" />
+  <text x="64" y="244" fill="#10B981" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">POST /api/agent/actions</text>
+  <text x="64" y="264" fill="#E4E4E7" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">- generate_from_prompt</text>
+  <text x="64" y="282" fill="#FBBF24" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">- enhance_video_with_motion</text>
+
+  <!-- Arrow 1 -> 2 -->
+  <line x1="284" y1="210" x2="318" y2="210" stroke="#10B981" stroke-width="2" />
+  <polygon points="314,205 324,210 314,215" fill="#10B981" />
+
+  <!-- Step 2: Anti-Slop Compiler & Schema -->
+  <rect x="326" y="100" width="256" height="220" rx="12" fill="#121216" stroke="#10B981" stroke-opacity="0.5" stroke-width="1.5" />
+  <rect x="342" y="118" width="68" height="22" rx="4" fill="#10B981" fill-opacity="0.15" />
+  <text x="352" y="133" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10" font-weight="800">STEP 02</text>
+  <text x="342" y="164" fill="#FAFAFA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16" font-weight="800">Anti-Slop Sanitizer</text>
+  <text x="342" y="186" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">Enforces editorial typography,</text>
+  <text x="342" y="204" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">color tokens &amp; layout zoning.</text>
+  <rect x="342" y="224" width="224" height="76" rx="6" fill="#09090B" stroke="#27272A" stroke-width="1" />
+  <text x="354" y="244" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">✓ Strips AI cliches &amp; neon</text>
+  <text x="354" y="264" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">✓ Max 2 widgets per scene</text>
+  <text x="354" y="282" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">✓ Zero-collision coordinates</text>
+
+  <!-- Arrow 2 -> 3 -->
+  <line x1="582" y1="210" x2="616" y2="210" stroke="#10B981" stroke-width="2" />
+  <polygon points="612,205 622,210 612,215" fill="#10B981" />
+
+  <!-- Step 3: Hybrid Motion Compositor -->
+  <rect x="624" y="100" width="256" height="220" rx="12" fill="#121216" stroke="#F59E0B" stroke-opacity="0.5" stroke-width="1.5" />
+  <rect x="640" y="118" width="68" height="22" rx="4" fill="#F59E0B" fill-opacity="0.15" />
+  <text x="650" y="133" fill="#FBBF24" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10" font-weight="800">STEP 03</text>
+  <text x="640" y="164" fill="#FAFAFA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16" font-weight="800">Hybrid Compositor</text>
+  <text x="640" y="186" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">Fuses raw video footage with</text>
+  <text x="640" y="204" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">live motion graphics overlays.</text>
+  <rect x="640" y="224" width="224" height="76" rx="6" fill="#09090B" stroke="#27272A" stroke-width="1" />
+  <text x="652" y="244" fill="#FBBF24" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">+ Camera Rig (Ken Burns)</text>
+  <text x="652" y="264" fill="#FBBF24" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">+ Transitions (Whip-Pan)</text>
+  <text x="652" y="282" fill="#FBBF24" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">+ HUD / Spotlight / KPIs</text>
+
+  <!-- Arrow 3 -> 4 -->
+  <line x1="880" y1="210" x2="914" y2="210" stroke="#10B981" stroke-width="2" />
+  <polygon points="910,205 920,210 910,215" fill="#10B981" />
+
+  <!-- Step 4: Native MIT Frame Engine -->
+  <rect x="922" y="100" width="242" height="220" rx="12" fill="#121216" stroke="#27272A" stroke-width="1.5" />
+  <rect x="938" y="118" width="68" height="22" rx="4" fill="#10B981" fill-opacity="0.15" />
+  <text x="948" y="133" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10" font-weight="800">STEP 04</text>
+  <text x="938" y="164" fill="#FAFAFA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="16" font-weight="800">100% MIT Engine</text>
+  <text x="938" y="186" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">Zero-Remotion deterministic</text>
+  <text x="938" y="204" fill="#A1A1AA" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">clock + WebAudio + Recorder.</text>
+  <rect x="938" y="224" width="210" height="76" rx="6" fill="#09090B" stroke="#27272A" stroke-width="1" />
+  <text x="950" y="244" fill="#E4E4E7" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">• 30/60 FPS Spring Physics</text>
+  <text x="950" y="264" fill="#E4E4E7" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">• 16:9, 9:16, 1:1 Responsive</text>
+  <text x="950" y="282" fill="#34D399" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="10">• Direct WebM / MP4 Export</text>
+</svg>
