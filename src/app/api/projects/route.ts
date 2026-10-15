@@ -1,5 +1,10 @@
 import { NextRequest, connection } from "next/server";
-import { getStoreSnapshot, saveProject } from "@/lib/server/project-store";
+import {
+  getStoreSnapshot,
+  saveProject,
+  withStoreWriteLock,
+} from "@/lib/server/project-store";
+import { verifyApiSecurity } from "@/lib/server/security";
 
 export async function GET() {
   try {
@@ -15,6 +20,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const sec = verifyApiSecurity(request);
+  if (!sec.allowed) {
+    return Response.json({ ok: false, error: sec.error }, { status: sec.status });
+  }
+
   try {
     const body = await request.json();
     const agentName =
@@ -22,7 +32,9 @@ export async function POST(request: NextRequest) {
         ? body.agentName
         : request.headers.get("x-agent-name") || "External AI Agent";
     const projectPayload = body.project ?? body;
-    const saved = saveProject(projectPayload, agentName, true);
+    const saved = await withStoreWriteLock(() =>
+      saveProject(projectPayload, agentName, true)
+    );
     return Response.json({
       ok: true,
       project: saved.project,

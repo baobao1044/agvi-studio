@@ -25,15 +25,12 @@ import {
 } from "@/lib/schema/timeline-schema";
 import { STARTER_TEMPLATES } from "@/lib/schema/starter-templates";
 import {
-  DESIGN_DIRECTION_PRESETS,
-  resolveDesignDirection,
-} from "@/lib/anti-slop/anti-slop-filter";
-import {
   AgentActionLogEntry,
   AgentActionPayload,
   RenderJob,
 } from "@/lib/server/project-store";
 import { soundEngine } from "@/lib/audio/procedural-sound-engine";
+import { renderProjectFrameToCanvas } from "@/lib/engine/frame-compositor";
 import { AGVIComposition } from "@/components/remotion/AGVIComposition";
 import { SchemaAndAgentPanel } from "./SchemaAndAgentPanel";
 import { InspectorPanel } from "./InspectorPanel";
@@ -511,13 +508,31 @@ export const AGVIStudio: React.FC = () => {
     if (!quickPrompt.trim()) return;
     try {
       setIsGeneratingQuick(true);
-      await handleExecuteAgentAction({
-        action: "generate_from_prompt",
-        agentName: "Top Magic Prompt Bar",
-        prompt: quickPrompt.trim(),
-        aspectRatio: project.canvas.aspectRatio,
+      pushUndoSnapshot(project);
+      const res = await fetch("/api/agent/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          agentName: "Top Magic Prompt Bar",
+          prompt: quickPrompt.trim(),
+          aspectRatio: project.canvas.aspectRatio,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Failed to generate video from prompt");
+      }
+      lastUpdatedAtRef.current = data.project.updatedAt;
+      setProject(data.project);
+      soundEngine.playTechChime();
+      if (data.log) {
+        setActionLogs((prev) => [data.log, ...prev]);
+        showToast(data.log.summary);
+      }
       setQuickPrompt("");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
     } finally {
       setIsGeneratingQuick(false);
     }
@@ -542,16 +557,21 @@ export const AGVIStudio: React.FC = () => {
   };
 
   /**
-   * Real Client-Side High-Tempo Video Exporter (.webm / .mp4 via Canvas Stream + MediaRecorder).
-   * Synthesizes a frame-accurate composite video stream directly in the browser using the
-   * active Design Direction palette, 3D keyframes, directional RGB split, and 3D stage projection.
+   * Real Client-Side Full-Duration Video + Audio Exporter (.webm / .mp4 via Unified Frame Compositor + WebAudio MediaRecorder).
+   * - Renders every frame across the full project duration (`Math.round(project.canvas.duration * fps)`) — NO 180-frame cap!
+   * - Evaluates all timeline tracks, 6-DOF keyframes, camera rigs, motion overlays, and widget variants via `renderProjectFrameToCanvas`.
+   * - Multiplexes the synthesized Web Audio soundtrack & transition/Sub-Bass SFX stream into `MediaRecorder` via `soundEngine.createExportAudioStream()`.
+   * - Updates the server `RenderJob` status honestly (`queued` -> `rendering` -> `completed` | `failed`).
    */
   const handleBrowserVideoExport = async () => {
     if (isRecordingVideo) return;
 
     const requestedFormat = latestRenderJob?.format || "webm";
+    const activeJobId = latestRenderJob?.id;
+
     if (requestedFormat === "json-bundle") {
-      const blob = new Blob([JSON.stringify(project, null, 2)], {
+      const jsonStr = JSON.stringify(project, null, 2);
+      const blob = new Blob([jsonStr], {
         type: "application/json",
       });
       const url = URL.createObjectURL(blob);
@@ -560,6 +580,21 @@ export const AGVIStudio: React.FC = () => {
       a.download = `${project.id || "agvi-project"}-bundle.json`;
       a.click();
       URL.revokeObjectURL(url);
+      if (activeJobId) {
+        fetch("/api/render", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: activeJobId,
+            status: "completed",
+            progress: 100,
+            fileSizeBytes: blob.size,
+          }),
+        })
+          .then((r) => r.json())
+          .then((d) => d.job && setLatestRenderJob(d.job))
+          .catch(() => {});
+      }
       showToast(`Exported JSON Bundle (${project.id}-bundle.json)`);
       return;
     }
@@ -567,13 +602,23 @@ export const AGVIStudio: React.FC = () => {
     setIsRecordingVideo(true);
     setRecordingProgress(0);
 
+    const { stream: audioStream, cleanup: cleanupAudioStream } =
+      soundEngine.createExportAudioStream();
+
     try {
-      const direction =
-        resolveDesignDirection(
-          project.agentMeta?.designDirection as string | undefined,
-          `${project.name} ${project.description ?? ""}`
-        ) ?? DESIGN_DIRECTION_PRESETS["kinetic-3d-keynote"];
-      const { palette } = direction;
+      if (activeJobId) {
+        const res = await fetch("/api/render", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: activeJobId,
+            status: "rendering",
+            progress: 1,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.job) setLatestRenderJob(data.job);
+      }
 
       const exportCanvas = document.createElement("canvas");
       exportCanvas.width = project.canvas.width;
@@ -582,28 +627,41 @@ export const AGVIStudio: React.FC = () => {
       if (!ctx) throw new Error("Canvas 2D context unavailable");
 
       const fps = Math.min(60, Math.max(24, project.canvas.fps || 30));
-      const stream = exportCanvas.captureStream(fps);
+      const videoStream = exportCanvas.captureStream(fps);
+
+      // Multiplex Canvas Video Track + WebAudio Soundtrack Track into a unified MediaStream
+      const combinedTracks: MediaStreamTrack[] = [
+        ...videoStream.getVideoTracks(),
+        ...(audioStream ? audioStream.getAudioTracks() : []),
+      ];
+      const combinedStream = new MediaStream(combinedTracks);
 
       const prefersMp4 = requestedFormat === "mp4";
       const mp4Candidate =
         typeof MediaRecorder !== "undefined" &&
-        MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
-          ? "video/mp4;codecs=avc1"
+        MediaRecorder.isTypeSupported("video/mp4;codecs=avc1,mp4a.40.2")
+          ? "video/mp4;codecs=avc1,mp4a.40.2"
           : typeof MediaRecorder !== "undefined" &&
-              MediaRecorder.isTypeSupported("video/mp4")
-            ? "video/mp4"
-            : "";
+              MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
+            ? "video/mp4;codecs=avc1"
+            : typeof MediaRecorder !== "undefined" &&
+                MediaRecorder.isTypeSupported("video/mp4")
+              ? "video/mp4"
+              : "";
       const webmCandidate =
         typeof MediaRecorder !== "undefined" &&
-        MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-          ? "video/webm;codecs=vp9"
+        MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+          ? "video/webm;codecs=vp9,opus"
           : typeof MediaRecorder !== "undefined" &&
-              MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
-            ? "video/webm;codecs=vp8"
+              MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+            ? "video/webm;codecs=vp8,opus"
             : typeof MediaRecorder !== "undefined" &&
-                MediaRecorder.isTypeSupported("video/webm")
-              ? "video/webm"
-              : "";
+                MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+              ? "video/webm;codecs=vp9"
+              : typeof MediaRecorder !== "undefined" &&
+                  MediaRecorder.isTypeSupported("video/webm")
+                ? "video/webm"
+                : "";
 
       const mimeType = prefersMp4
         ? mp4Candidate || webmCandidate
@@ -618,9 +676,9 @@ export const AGVIStudio: React.FC = () => {
               : "webm";
 
       const recorder = new MediaRecorder(
-        stream,
+        combinedStream,
         mimeType
-          ? { mimeType, videoBitsPerSecond: 8_000_000 }
+          ? { mimeType, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 128_000 }
           : { videoBitsPerSecond: 8_000_000 }
       );
 
@@ -639,237 +697,83 @@ export const AGVIStudio: React.FC = () => {
         };
       });
 
-      recorder.start();
+      recorder.start(100);
 
-      // Render a crisp 60fps high-tempo preview reel (~3.5s real-time capture)
-      const totalExportFrames = Math.min(180, Math.round(fps * 3.5));
+      // Full timeline duration rendering — NO arbitrary 180-frame cap!
       const projectDuration = Math.max(1, project.canvas.duration || 10);
+      const totalExportFrames = Math.max(1, Math.round(projectDuration * fps));
+      const frameIntervalMs = Math.max(8, Math.round(1000 / fps));
 
-      for (let f = 0; f < totalExportFrames; f++) {
-        const simSec = (f / totalExportFrames) * projectDuration;
-        const targetPlayerFrame = Math.round(
-          simSec * (project.canvas.fps || 30)
-        );
-        playerRef.current?.seekTo(targetPlayerFrame);
-
-        const w = exportCanvas.width;
-        const h = exportCanvas.height;
-        const portrait = h > w;
-
-        // 1. Matte Stage Background (respects canvas override first, then Design Direction palette)
-        ctx.fillStyle =
-          project.canvas.backgroundColor || palette.canvasBg || "#070807";
-        ctx.fillRect(0, 0, w, h);
-
-        // 2. Architectural Frame Border + Corner Registration Marks
-        ctx.strokeStyle = palette.border;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(42, 42, w - 84, h - 84);
-        ctx.fillStyle = palette.accent;
-        ctx.fillRect(41, 41, 28, 3);
-        ctx.fillRect(41, 41, 3, 28);
-        ctx.fillRect(w - 69, h - 44, 28, 3);
-        ctx.fillRect(w - 44, h - 69, 3, 28);
-
-        // 3. 3D Perspective Grid & Wireframe Polyhedron Projection
-        ctx.strokeStyle = palette.accent;
-        ctx.globalAlpha = 0.34;
-        ctx.lineWidth = 2;
-        const cx = portrait ? w * 0.5 : w * 0.64;
-        const cy = portrait ? h * 0.34 : h * 0.48;
-        const radius = Math.min(w, h) * 0.24;
-        const rotY = simSec * 1.15;
-        const rotX = simSec * 0.72;
-
-        const phi = (1 + Math.sqrt(5)) / 2;
-        const rawVerts = [
-          [-1, phi, 0],
-          [1, phi, 0],
-          [-1, -phi, 0],
-          [1, -phi, 0],
-          [0, -1, phi],
-          [0, 1, phi],
-          [0, -1, -phi],
-          [0, 1, -phi],
-          [phi, 0, -1],
-          [phi, 0, 1],
-          [-phi, 0, -1],
-          [-phi, 0, 1],
-        ];
-        const projected = rawVerts.map(([vx, vy, vz]) => {
-          const x1 = vx * Math.cos(rotY) - vz * Math.sin(rotY);
-          const z1 = vx * Math.sin(rotY) + vz * Math.cos(rotY);
-          const y2 = vy * Math.cos(rotX) - z1 * Math.sin(rotX);
-          const z2 = vy * Math.sin(rotX) + z1 * Math.cos(rotX);
-          const scale = 4.2 / (4.8 - z2 * 0.45);
-          return {
-            x: cx + x1 * radius * 0.52 * scale,
-            y: cy + y2 * radius * 0.52 * scale,
-          };
-        });
-
-        for (let i = 0; i < projected.length; i++) {
-          for (let j = i + 1; j < projected.length; j++) {
-            const dx = rawVerts[i][0] - rawVerts[j][0];
-            const dy = rawVerts[i][1] - rawVerts[j][1];
-            const dz = rawVerts[i][2] - rawVerts[j][2];
-            if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 2.15) {
-              ctx.beginPath();
-              ctx.moveTo(projected[i].x, projected[i].y);
-              ctx.lineTo(projected[j].x, projected[j].y);
-              ctx.stroke();
+      // Preload external ImageClip & VideoClip URLs into FrameAssetCache so non-procedural assets render cleanly
+      const imageCache = new Map<string, HTMLImageElement>();
+      const videoCache = new Map<string, HTMLVideoElement>();
+      for (const trk of project.tracks) {
+        if (trk.hidden) continue;
+        for (const clip of trk.clips) {
+          if (
+            (clip.type === "image" || clip.type === "video") &&
+            clip.src &&
+            !clip.src.startsWith("procedural://") &&
+            !clip.src.startsWith("procedural-video://")
+          ) {
+            if (clip.type === "image" && !imageCache.has(clip.src)) {
+              const imgEl = new Image();
+              imgEl.crossOrigin = "anonymous";
+              imgEl.src = clip.src;
+              imageCache.set(clip.src, imgEl);
+            } else if (clip.type === "video" && !videoCache.has(clip.src)) {
+              const vidEl = document.createElement("video");
+              vidEl.crossOrigin = "anonymous";
+              vidEl.muted = true;
+              vidEl.playsInline = true;
+              vidEl.preload = "auto";
+              vidEl.src = clip.src;
+              videoCache.set(clip.src, vidEl);
             }
           }
         }
-        ctx.globalAlpha = 1;
+      }
+      const frameAssets = { images: imageCache, videos: videoCache };
 
-        // 4. Render active backdrops, overlays, badges, shape widgets, headlines & caption clips
-        for (const track of project.tracks) {
-          if (track.hidden) continue;
-          for (const clip of track.clips) {
+      for (let f = 0; f < totalExportFrames; f++) {
+        const simSec = f / fps;
+        playerRef.current?.seekTo(f);
+
+        // Sync any preloaded HTMLVideoElement timestamps to the current frame time
+        for (const trk of project.tracks) {
+          if (trk.hidden) continue;
+          for (const clip of trk.clips) {
             if (
+              clip.type === "video" &&
+              clip.src &&
+              videoCache.has(clip.src) &&
               simSec >= clip.startTime &&
               simSec <= clip.startTime + clip.duration
             ) {
-              const localProgress = Math.min(
-                1,
-                Math.max(
-                  0,
-                  (simSec - clip.startTime) / Math.max(0.1, clip.duration)
-                )
-              );
-              const enterEase = Math.min(1, localProgress * 4.5);
-
-              if (
-                (clip.type === "video" || clip.type === "image") &&
-                clip.motionOverlay &&
-                clip.motionOverlay.preset !== "none"
-              ) {
-                const ovAccent = clip.motionOverlay.accentColor || palette.accent;
-                ctx.strokeStyle = ovAccent;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(w * 0.08, h * 0.64, 420, 66);
-                ctx.fillStyle = palette.surfaceBg;
-                ctx.fillRect(w * 0.08, h * 0.64, 420, 66);
-                ctx.fillStyle = ovAccent;
-                ctx.font = `700 16px monospace`;
-                ctx.fillText(
-                  (
-                    clip.motionOverlay.title ||
-                    clip.motionOverlay.preset.toUpperCase()
-                  ).slice(0, 42),
-                  w * 0.08 + 16,
-                  h * 0.64 + 28
-                );
-                if (clip.motionOverlay.subtitle) {
-                  ctx.fillStyle = palette.textMuted;
-                  ctx.font = `500 14px monospace`;
-                  ctx.fillText(
-                    clip.motionOverlay.subtitle.slice(0, 48),
-                    w * 0.08 + 16,
-                    h * 0.64 + 50
-                  );
+              const vidEl = videoCache.get(clip.src)!;
+              const targetTime =
+                (clip.trimStart || 0) +
+                (simSec - clip.startTime) * (clip.playbackRate || 1);
+              if (Math.abs(vidEl.currentTime - targetTime) > 0.08) {
+                try {
+                  vidEl.currentTime = targetTime;
+                } catch {
+                  // Ignore seek errors on unbuffered streams
                 }
-              }
-
-              if (clip.type === "shape" && clip.shapeVariant === "badge") {
-                const badgeAccent = clip.accentColor || palette.accent;
-                ctx.fillStyle = palette.surfaceBg;
-                ctx.fillRect(w * 0.08, h * 0.11, 520, 42);
-                ctx.fillStyle = badgeAccent;
-                ctx.fillRect(w * 0.08, h * 0.11, 5, 42);
-                ctx.fillStyle = palette.textPrimary;
-                ctx.font = `700 18px monospace`;
-                ctx.fillText(
-                  (clip.title || clip.name).slice(0, 46),
-                  w * 0.08 + 18,
-                  h * 0.11 + 27
-                );
-              } else if (clip.type === "text") {
-                const offsetX = (1 - enterEase) * -80;
-                const chromaOffset = (1 - enterEase) * 6;
-                ctx.font = `800 ${Math.round((clip.style?.fontSize || 60) * (portrait ? 0.65 : 0.95))}px sans-serif`;
-                if (chromaOffset > 0.5) {
-                  ctx.fillStyle = "rgba(255, 50, 50, 0.7)";
-                  ctx.fillText(
-                    clip.text.slice(0, 46),
-                    w * 0.08 + offsetX - chromaOffset,
-                    h * 0.42
-                  );
-                  ctx.fillStyle = "rgba(0, 220, 255, 0.7)";
-                  ctx.fillText(
-                    clip.text.slice(0, 46),
-                    w * 0.08 + offsetX + chromaOffset,
-                    h * 0.42
-                  );
-                }
-                ctx.fillStyle = clip.style?.color || palette.textPrimary;
-                ctx.fillText(
-                  clip.text.slice(0, 46),
-                  w * 0.08 + offsetX,
-                  h * 0.42
-                );
-                if (clip.subtext) {
-                  ctx.fillStyle = palette.textMuted;
-                  ctx.font = `500 24px sans-serif`;
-                  ctx.fillText(
-                    clip.subtext.slice(0, 70),
-                    w * 0.08 + offsetX,
-                    h * 0.49
-                  );
-                }
-              } else if (
-                clip.type === "shape" &&
-                clip.shapeVariant !== "progress-bar" &&
-                clip.shapeVariant !== "badge"
-              ) {
-                const shapeAccent = clip.accentColor || palette.accent;
-                const cardX = portrait ? w * 0.08 : w * 0.52;
-                const cardY = portrait ? h * 0.54 : h * 0.26;
-                const cardW = portrait ? w * 0.84 : w * 0.4;
-                const cardH = portrait ? h * 0.22 : h * 0.42;
-                ctx.fillStyle = palette.surfaceBg;
-                ctx.fillRect(cardX, cardY, cardW, cardH);
-                ctx.strokeStyle = shapeAccent;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(cardX, cardY, cardW, cardH);
-                ctx.fillStyle = shapeAccent;
-                ctx.font = `700 20px monospace`;
-                ctx.fillText(
-                  (clip.title || clip.shapeVariant.toUpperCase()).slice(0, 38),
-                  cardX + 24,
-                  cardY + 42
-                );
-                if (clip.subtitle) {
-                  ctx.fillStyle = palette.textMuted;
-                  ctx.font = `500 18px monospace`;
-                  ctx.fillText(
-                    clip.subtitle.slice(0, 48),
-                    cardX + 24,
-                    cardY + 74
-                  );
-                }
-              } else if (clip.type === "caption") {
-                const capAccent = clip.highlightColor || palette.accent;
-                ctx.fillStyle = clip.backgroundColor || palette.surfaceBg;
-                ctx.fillRect(w * 0.12, h * 0.82, w * 0.76, 68);
-                ctx.strokeStyle = palette.border;
-                ctx.lineWidth = 1;
-                ctx.strokeRect(w * 0.12, h * 0.82, w * 0.76, 68);
-                ctx.fillStyle = capAccent;
-                ctx.font = `700 30px sans-serif`;
-                ctx.fillText(clip.text.slice(0, 68), w * 0.15, h * 0.865);
               }
             }
           }
         }
 
-        // 5. Bottom Progress Bar
-        ctx.fillStyle = palette.accent;
-        ctx.fillRect(0, h - 8, w * (simSec / projectDuration), 8);
+        // Trigger synchronized procedural soundtrack + transition SFX into the multiplexed AudioStream
+        soundEngine.syncTime(simSec, project, true, true);
 
-        setRecordingProgress(Math.round(((f + 1) / totalExportFrames) * 100));
-        await new Promise((r) => setTimeout(r, 16));
+        // Composite the exact frame using the unified deterministic frame compositor
+        renderProjectFrameToCanvas(ctx, project, f, frameAssets);
+
+        const pct = Math.round(((f + 1) / totalExportFrames) * 100);
+        setRecordingProgress(pct);
+        await new Promise((r) => setTimeout(r, frameIntervalMs));
       }
 
       recorder.stop();
@@ -880,14 +784,46 @@ export const AGVIStudio: React.FC = () => {
       a.download = `${project.id || "agvi-3d-render"}.${fileExt}`;
       a.click();
       URL.revokeObjectURL(url);
+
+      if (activeJobId) {
+        const res = await fetch("/api/render", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: activeJobId,
+            status: "completed",
+            progress: 100,
+            fileSizeBytes: videoBlob.size,
+            outputPath: `${project.id || "agvi-3d-render"}.${fileExt}`,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.job) setLatestRenderJob(data.job);
+      }
+
       showToast(
-        `Exported ${fps}fps 3D Video (${project.id}.${fileExt})`
+        `Exported Full ${projectDuration}s (${totalExportFrames} frames @ ${fps}fps) Video + Audio (${project.id}.${fileExt})`
       );
     } catch (err) {
-      showToast(
-        `Video export error: ${err instanceof Error ? err.message : String(err)}`
-      );
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (activeJobId) {
+        fetch("/api/render", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: activeJobId,
+            status: "failed",
+            progress: 0,
+            errorMessage: errMsg,
+          }),
+        })
+          .then((r) => r.json())
+          .then((d) => d.job && setLatestRenderJob(d.job))
+          .catch(() => {});
+      }
+      showToast(`Video export error: ${errMsg}`);
     } finally {
+      cleanupAudioStream();
       setIsRecordingVideo(false);
     }
   };
@@ -1156,30 +1092,66 @@ export const AGVIStudio: React.FC = () => {
             </div>
 
             <div className="p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+              <div className="grid grid-cols-4 gap-2.5">
+                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
                   <div className="text-slate-400">Job ID</div>
-                  <div className="font-mono font-semibold text-sky-300 mt-0.5">
+                  <div className="font-mono font-semibold text-sky-300 mt-0.5 truncate">
                     {latestRenderJob.id}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-slate-400">Lifecycle Status</div>
+                  <div className="font-mono font-semibold mt-0.5 flex items-center gap-1.5">
+                    <span
+                      className={`inline-block w-2 h-2 rounded-full ${
+                        latestRenderJob.status === "completed"
+                          ? "bg-emerald-400"
+                          : latestRenderJob.status === "failed"
+                            ? "bg-rose-400"
+                            : latestRenderJob.status === "rendering"
+                              ? "bg-amber-400 animate-pulse"
+                              : "bg-sky-400"
+                      }`}
+                    />
+                    <span
+                      className={
+                        latestRenderJob.status === "completed"
+                          ? "text-emerald-300"
+                          : latestRenderJob.status === "failed"
+                            ? "text-rose-300"
+                            : latestRenderJob.status === "rendering"
+                              ? "text-amber-300"
+                              : "text-sky-300"
+                      }
+                    >
+                      {latestRenderJob.status} ({latestRenderJob.progress}%)
+                    </span>
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
                   <div className="text-slate-400">Resolution & FPS</div>
                   <div className="font-mono font-semibold text-slate-100 mt-0.5">
                     {latestRenderJob.resolution} @ {latestRenderJob.fps}fps
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                  <div className="text-slate-400">Duration</div>
+                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-slate-400">Duration & Frames</div>
                   <div className="font-mono font-semibold text-emerald-300 mt-0.5">
                     {latestRenderJob.duration}s (
-                    {Math.round(
-                      latestRenderJob.duration * latestRenderJob.fps
-                    )}{" "}
-                    frames)
+                    {latestRenderJob.frameCount ??
+                      Math.round(
+                        latestRenderJob.duration * latestRenderJob.fps
+                      )}
+                    f)
                   </div>
                 </div>
               </div>
+
+              {latestRenderJob.errorMessage && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 font-mono text-[11px] text-rose-300">
+                  {latestRenderJob.errorMessage}
+                </div>
+              )}
 
               <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
                 <span className="text-slate-300 font-medium">

@@ -1,8 +1,19 @@
 import { NextRequest } from "next/server";
-import { executeAgentAction } from "@/lib/server/project-store";
+import {
+  compilePromptToStoryboardWithLLM,
+  executeAgentAction,
+  withStoreWriteLock,
+} from "@/lib/server/project-store";
 import { AspectRatio } from "@/lib/schema/timeline-schema";
+import { DesignDirectionId } from "@/lib/anti-slop/anti-slop-filter";
+import { verifyApiSecurity } from "@/lib/server/security";
 
 export async function POST(request: NextRequest) {
+  const sec = verifyApiSecurity(request);
+  if (!sec.allowed) {
+    return Response.json({ ok: false, error: sec.error }, { status: sec.status });
+  }
+
   try {
     const body = await request.json();
     const prompt =
@@ -27,23 +38,39 @@ export async function POST(request: NextRequest) {
         ? body.aspectRatio
         : undefined;
 
-    const result = executeAgentAction({
-      action: "generate_from_prompt",
-      projectId: body.projectId,
-      agentName:
-        body.agentName ||
-        request.headers.get("x-agent-name") ||
-        "AGVI Prompt-to-Video Director",
+    const designDirection: DesignDirectionId | undefined =
+      typeof body.designDirection === "string"
+        ? (body.designDirection as DesignDirectionId)
+        : undefined;
+
+    const compiled = await compilePromptToStoryboardWithLLM(
       prompt,
       aspectRatio,
-      designDirection:
-        typeof body.designDirection === "string"
-          ? body.designDirection
-          : undefined,
-    });
+      designDirection
+    );
+
+    const result = await withStoreWriteLock(() =>
+      executeAgentAction({
+        action: "generate_from_prompt",
+        projectId: body.projectId,
+        agentName:
+          body.agentName ||
+          request.headers.get("x-agent-name") ||
+          "AGVI Prompt-to-Video Director",
+        prompt,
+        title: compiled.title,
+        aspectRatio: compiled.aspectRatio,
+        designDirection: compiled.designDirection,
+        scenes: compiled.scenes,
+        compilerMode: compiled.compilerMode,
+        providerName: compiled.providerName,
+      })
+    );
 
     return Response.json({
       ok: true,
+      compilerMode: compiled.compilerMode,
+      providerName: compiled.providerName ?? null,
       project: result.project,
       validation: result.validation,
       log: result.log,

@@ -165,11 +165,21 @@ curl -X POST http://localhost:3000/api/agent/generate \
   }'
 ```
 
-### 3. Run the Automated 8-Suite Verification Script
+### 3. Run the Automated 12-Suite Verification Script
 
 ```bash
+npm test
+# or directly:
 npx tsx scripts/verify-3d-engine.ts
 ```
+
+### 4. Optional Environment Variables (LLM Director & API Security)
+
+| Variable | Purpose |
+| :--- | :--- |
+| `OPENAI_API_KEY` / `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | Enables real LLM structured storyboard generation in `POST /api/agent/generate` (`compilerMode: "llm-provider"`). When unset, falls back to the deterministic bilingual heuristic compiler (`compilerMode: "deterministic-heuristic"`). |
+| `AGVI_API_KEY` | Optional API key protection (`x-api-key` or `Authorization: Bearer <key>`) on mutating API routes. |
+| `AGVI_RATE_LIMIT_MAX` / `AGVI_RATE_LIMIT_WINDOW_MS` | Configures the per-client sliding-window rate limiter on mutating API endpoints (default: `120` requests / `60000ms`). |
 
 ---
 
@@ -177,22 +187,30 @@ npx tsx scripts/verify-3d-engine.ts
 
 ```text
 agvi-studio/
+├── .github/workflows/ci.yml                 # Automated CI (tsc, eslint, 12-suite test, next build)
 ├── public/docs/                             # Vector SVG architectural & UI illustrations
 ├── docs/                                    # Developer & User Documentation (VN / EN)
 ├── scripts/
-│   ├── verify-3d-engine.ts                  # 8-Suite automated 3D Engine, Keyframe & API test runner
-│   └── render-ffmpeg.mjs                    # Headless CLI video & manifest exporter (.webm / .mp4)
+│   ├── verify-3d-engine.ts                  # 12-Suite automated 3D Engine, WebGL, Security & API test runner
+│   └── render-ffmpeg.mjs                    # Headless CLI timeline rasterizer & FFmpeg encoder (.webm / .mp4 / .json)
 ├── src/
 │   ├── lib/
-│   │   ├── engine/agvi-engine.tsx           # 100% MIT 60FPS Frame Clock, Easing, Shake, Spring & Player
+│   │   ├── engine/
+│   │   │   ├── agvi-engine.tsx              # 100% MIT 60FPS Frame Clock, Easing, Shake, Spring & Player
+│   │   │   ├── keyframe-evaluator.ts        # 6-DOF keyframe, velocity, camera rig & responsive layout solver
+│   │   │   ├── webgl-stage.tsx              # Real WebGL2/WebGL1 GLSL 3D shader stage + 2D projection fallback
+│   │   │   └── frame-compositor.ts          # Unified deterministic Canvas 2D + WebGL frame compositor
 │   │   ├── schema/timeline-schema.ts        # 6-DOF 3D Transform, Keyframe & Timeline JSON Schema
 │   │   ├── schema/starter-templates.ts      # 5 Showcase Templates (incl. 60FPS Kinetic 3D Keynote)
 │   │   ├── anti-slop/anti-slop-filter.ts    # Anti-Slop gate + 5 Art Direction presets
-│   │   ├── audio/procedural-sound-engine.ts # Web Audio API 120BPM score, whip whoosh & Sub-Bass SFX
-│   │   └── server/project-store.ts          # 3D Prompt compiler & atomic AI action reducer
+│   │   ├── audio/procedural-sound-engine.ts # Web Audio API 120BPM score, SFX & MediaStream audio multiplexer
+│   │   └── server/
+│   │       ├── project-store.ts             # Atomic store persistence, write mutex & AI action reducer
+│   │       ├── llm-director.ts              # Dual-mode LLM + deterministic heuristic storyboard compiler
+│   │       └── security.ts                  # API key auth, sliding-window rate limiter & payload guard
 │   ├── components/
-│   │   ├── remotion/AGVIComposition.tsx     # 6-DOF 3D Stage, WebGL Shader & Motion Blur Compositor
-│   │   └── studio/                          # NLE Studio UI (Velocity Graph Editor, Timeline, Exporter)
+│   │   ├── remotion/AGVIComposition.tsx     # 6-DOF 3D Stage, WebGL Shader & Motion Blur React Compositor
+│   │   └── studio/                          # NLE Studio UI (Velocity Graph Editor, Timeline, Full-Duration Exporter)
 │   └── app/api/                             # Dynamic Next.js 16 REST API Routes (/agent/*, /render, /schema)
 └── LICENSE                                  # 100% MIT License
 ```

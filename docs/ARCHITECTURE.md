@@ -14,12 +14,16 @@ Most programmatic React video tools rely on frameworks with proprietary commerci
 
 | Module | File Path | Responsibility |
 | :--- | :--- | :--- |
-| **Native Frame Engine** | `src/lib/engine/agvi-engine.tsx` | Provides `useCurrentFrame()`, `useVideoConfig()`, `interpolate()`, `spring()`, `<Sequence>`, `<AbsoluteFill>`, `<AGVIPlayer>`, and WebM/MP4 `MediaRecorder` export. |
-| **Hybrid Compositor** | `src/components/remotion/AGVIComposition.tsx` | Renders multi-track clips, Camera Motion Rigs, Scene Transitions, Attached Motion Overlays, and context-aware responsive layout zoning (`16:9`, `9:16`, `1:1`). |
-| **Anti-Slop Guardrail** | `src/lib/anti-slop/anti-slop-filter.ts` | Sanitizes AI-generated copy, strips banned clichés & emojis, maps neon colors to editorial palettes, and enforces density caps. |
-| **Timeline Schema** | `src/lib/schema/timeline-schema.ts` | Defines the deterministic JSON contract (`AGVIProject`, `Track`, `Clip`, `AgentActionRequest`) shared between the UI and AI Agents. |
-| **Procedural Audio Engine** | `src/lib/audio/procedural-sound-engine.ts` | Synthesizes real-time ambient backing tracks and transition SFX (whoosh, pop, sub-drop, riser) via the browser's Web Audio API with zero external MP3 dependencies. |
-| **AI Director & Store** | `src/lib/server/project-store.ts` | Executes atomic mutations, natural language prompt-to-video compilation, and the 1-call `enhance_video_with_motion` enhancer. |
+| **Native Frame Engine** | `src/lib/engine/agvi-engine.tsx` | Provides `useCurrentFrame()`, `useVideoConfig()`, `interpolate()`, `spring()`, `evaluateEasing()`, `evaluateClipKeyframes()`, `computeCameraShake()`, `<Sequence>`, `<AbsoluteFill>`, and `<AGVIPlayer>`. |
+| **6-DOF Keyframe & Layout Solver** | `src/lib/engine/keyframe-evaluator.ts` | Evaluates multi-point 3D keyframes (`x, y, z, scale, rotation, rotateX, rotateY, opacity, blur`), instantaneous frame-to-frame velocity vectors, 3D camera rigs, and responsive collision-free layout zones (`16:9`, `9:16`, `1:1`, `4:5`). |
+| **WebGL2 / WebGL1 3D Shader Stage** | `src/lib/engine/webgl-stage.tsx` | Compiles real GLSL vertex (`AGVI_WEBGL_VERTEX_SHADER`) and fragment (`AGVI_WEBGL_FRAGMENT_SHADER`) shaders with 4x4 perspective (`uProjection`) and model-view (`uModelView`) matrices to render depth-tested 3D geometry (`3d-voxel-cube`, `3d-wireframe-sphere`, `3d-cyber-ring`, `3d-prism-pyramid`, `3d-starfield-tunnel`), with automatic 2D projection fallback when WebGL is unavailable. |
+| **Unified Frame Compositor** | `src/lib/engine/frame-compositor.ts` | Evaluates every track, clip, 6-DOF transform, camera rig, kinetic text effect, and data widget (`renderProjectFrameToCanvas` & `inspectFrameComposition`) so Browser Video Export and server-side inspection render the actual project timeline rather than static placeholders. |
+| **Hybrid React Stage** | `src/components/remotion/AGVIComposition.tsx` | Interactive DOM + WebGL stage for real-time 60FPS preview in the studio viewport. |
+| **Anti-Slop Guardrail** | `src/lib/anti-slop/anti-slop-filter.ts` | Sanitizes AI-generated copy, strips banned clichés & fake metrics, maps colors to curated palettes, and preserves intentional 10/10 kinetic 3D effects. |
+| **Procedural Audio & Stream Muxer** | `src/lib/audio/procedural-sound-engine.ts` | Synthesizes real-time ambient backing tracks and transition SFX via the Web Audio API, and exposes `createExportAudioStream()` (`AudioContext.createMediaStreamDestination()`) to multiplex audio directly into browser `.webm` / `.mp4` exports. |
+| **Dual-Mode AI Director** | `src/lib/server/llm-director.ts` | Compiles natural language prompts into 4-scene storyboards via OpenAI, Gemini, or Anthropic APIs when an API key is configured (`compilerMode: "llm-provider"`), or falls back deterministically to the bilingual heuristic compiler (`compilerMode: "deterministic-heuristic"`). |
+| **Atomic Store & Render Lifecycle** | `src/lib/server/project-store.ts` | Persists `.agvi-data/store.json` using atomic temp-file-and-rename writes serialized by `withStoreWriteLock()`, and tracks honest `RenderJob` states (`queued` -> `rendering` -> `completed` \| `failed`). |
+| **API Security & Rate Limiter** | `src/lib/server/security.ts` | Enforces optional `AGVI_API_KEY` authentication (`401`), sliding-window rate limiting (`429`), and payload size caps (`413`) across all mutating API endpoints. |
 
 ---
 
@@ -46,11 +50,14 @@ Because animations never rely on unpredictable CSS timers (`setTimeout`), scrubb
 
 ---
 
-## 4. Context-Aware Responsive Layout Solver
+## 4. Export & Rendering Architecture
 
-One of the hardest problems in AI-generated video is **visual collision** (text overlapping widgets, spotlight callouts intersecting headlines, or subtitles getting clipped).
+AGVI Studio provides two honest, frame-accurate export paths:
 
-AGVI Studio solves this in `AGVIComposition.tsx` using `ActiveSceneLayoutContext`:
-1. Before rendering a frame, the compositor inspects all clips active at the current timestamp (`hasSpotlight`, `hasRightWidget`, `hasHeadline`).
-2. If a scene contains both a **Headline** and a **Right-Column Data Widget** (`stat-counter`, `bar-chart`, `code-terminal`), the headline automatically docks to the left editorial column (`x: -23%, width: 38%`).
-3. If the background video also carries an attached **`spotlight-pointer`**, the headline anchors to the **Upper-Left**, the Spotlight Reticle & Callout Card anchor to the **Lower-Left**, and the Data Widget occupies the **Right Stage** — guaranteeing zero overlap across `16:9`, `9:16`, and `1:1`.
+1. **Full-Duration Browser Video + Audio Exporter (`AGVIStudio.tsx` + `frame-compositor.ts`)**:
+   - Renders the complete project duration (`Math.round(project.canvas.duration * fps)` frames — no arbitrary frame cap) using `renderProjectFrameToCanvas()`.
+   - Multiplexes synthesized Web Audio soundtrack and transition SFX tracks via `soundEngine.createExportAudioStream()` into the `MediaRecorder` stream (`video/webm;codecs=vp9` or `video/mp4`).
+   - Updates the server `RenderJob` via `PATCH /api/render` from `queued` -> `rendering` -> `completed` with verified byte size and frame count.
+2. **Headless CLI Rasterizer & FFmpeg Encoder (`scripts/render-ffmpeg.mjs`)**:
+   - Evaluates active project tracks, 6-DOF keyframes, 3D wireframe projections, and kinetic typography bars into a raw `rgb24` frame stream piped into `ffmpeg` (`libvpx-vp9` for `.webm` or `libx264` for `.mp4`), then verifies the output container with `ffprobe`.
+   - Never writes fake header-only container stubs: if `ffmpeg` is not installed on the host machine and a `.webm` or `.mp4` container is requested, the CLI and `POST /api/render` (`executeNow: true`) report `status: "failed"` with an explicit diagnostic error message.

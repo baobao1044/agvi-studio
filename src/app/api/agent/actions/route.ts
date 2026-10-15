@@ -3,8 +3,10 @@ import {
   AgentActionPayload,
   executeAgentAction,
   getStoreSnapshot,
+  withStoreWriteLock,
 } from "@/lib/server/project-store";
 import { getAgentSchemaDocumentation } from "@/lib/schema/timeline-schema";
+import { verifyApiSecurity } from "@/lib/server/security";
 
 export async function GET() {
   try {
@@ -24,6 +26,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const sec = verifyApiSecurity(request);
+  if (!sec.allowed) {
+    return Response.json({ ok: false, error: sec.error }, { status: sec.status });
+  }
+
   try {
     const body = (await request.json()) as AgentActionPayload;
     if (!body || typeof body.action !== "string") {
@@ -42,13 +49,42 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-agent-name") ||
       "AI Agent (Tool Call)";
 
-    const result = executeAgentAction({
+    let actionPayload: AgentActionPayload = {
       ...body,
       agentName,
-    });
+    };
+
+    if (
+      body.action === "generate_from_prompt" &&
+      (!Array.isArray(body.scenes) || body.scenes.length === 0)
+    ) {
+      const { compilePromptToStoryboardWithLLM } = await import(
+        "@/lib/server/project-store"
+      );
+      const compiled = await compilePromptToStoryboardWithLLM(
+        body.prompt || "Schema-Driven Video Engine",
+        body.aspectRatio,
+        body.designDirection
+      );
+      actionPayload = {
+        ...actionPayload,
+        title: body.title || compiled.title,
+        aspectRatio: body.aspectRatio || compiled.aspectRatio,
+        designDirection: body.designDirection || compiled.designDirection,
+        scenes: compiled.scenes,
+        compilerMode: compiled.compilerMode,
+        providerName: compiled.providerName,
+      };
+    }
+
+    const result = await withStoreWriteLock(() =>
+      executeAgentAction(actionPayload)
+    );
 
     return Response.json({
       ok: true,
+      compilerMode: result.project.agentMeta?.compilerMode ?? null,
+      providerName: result.project.agentMeta?.llmProvider ?? null,
       project: result.project,
       validation: result.validation,
       log: result.log,

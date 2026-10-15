@@ -310,7 +310,496 @@ async function verifyApiRoutes() {
   assert.equal(projByIdJson.project.id, "proj-kinetic-3d");
 
   console.log("[PASS] 8. Next.js REST API Route Handlers (/api/schema, /api/agent/actions, /api/agent/generate, /api/render, /api/projects, /api/projects/[id])");
-  console.log("=== ALL 8 VERIFICATION SUITES PASSED ===");
+
+  // 9. Unified Frame Compositor & WebGL Shader / Matrix Pipeline
+  const {
+    inspectFrameComposition,
+    renderProjectFrameToCanvas,
+  } = await import("../src/lib/engine/frame-compositor");
+  const {
+    AGVI_WEBGL_VERTEX_SHADER,
+    AGVI_WEBGL_FRAGMENT_SHADER,
+    buildPerspectiveMatrix4x4,
+    buildModelViewMatrix4x4,
+    buildProcedural3DMesh,
+  } = await import("../src/lib/engine/webgl-stage");
+
+  assert.ok(
+    AGVI_WEBGL_VERTEX_SHADER.includes("uProjection") &&
+      AGVI_WEBGL_VERTEX_SHADER.includes("uModelView"),
+    "WebGL vertex shader must declare 4x4 uProjection and uModelView uniforms"
+  );
+  assert.ok(
+    AGVI_WEBGL_FRAGMENT_SHADER.includes("gl_FragColor"),
+    "WebGL fragment shader must write gl_FragColor"
+  );
+  const perspMat = buildPerspectiveMatrix4x4(Math.PI / 3, 16 / 9, 1, 2400);
+  const mvMat = buildModelViewMatrix4x4(0.3, -0.5, 0.1, 600);
+  assert.equal(perspMat.length, 16);
+  assert.equal(mvMat.length, 16);
+  assert.equal(mvMat[14], -600);
+
+  for (const variant of [
+    "3d-voxel-cube",
+    "3d-wireframe-sphere",
+    "3d-cyber-ring",
+    "3d-prism-pyramid",
+    "3d-starfield-tunnel",
+  ] as const) {
+    const mesh = buildProcedural3DMesh(variant, 30, 60);
+    assert.ok(mesh.vertices.length > 0, `${variant} must generate 3D vertices`);
+    assert.ok(
+      mesh.edges.length > 0 || mesh.gridSegments.length > 0,
+      `${variant} must generate edge or grid indices`
+    );
+  }
+
+  // Inspect frame telemetry at frame=30 (0.5s), frame=120 (2.0s), frame=252 (4.2s) and out-of-bounds frame=5940 (99s)
+  const f0 = inspectFrameComposition(k3dTemplate, 30);
+  const f1 = inspectFrameComposition(k3dTemplate, 120);
+  const f2 = inspectFrameComposition(k3dTemplate, 252);
+  const fOut = inspectFrameComposition(k3dTemplate, 5940);
+  assert.ok(f0.activeClipCount >= 2, "Frame 30 (0.5s) must have active clips");
+  assert.ok(
+    f1.activeTrackTypes.includes("video") || f1.activeTrackTypes.includes("shape"),
+    "Frame 120 (2.0s) must include active video/shape tracks"
+  );
+  assert.ok(f2.activeClipCount >= 2, "Frame 252 (4.2s) must have active clips");
+  assert.equal(fOut.activeClipCount, 0, "Out-of-bounds frame 5940 (99s) must have 0 active clips");
+
+  // Exercise 2D canvas draw call path with a lightweight mock CanvasRenderingContext2D
+  let drawCalls = 0;
+  const noop = () => {
+    drawCalls++;
+  };
+  const mockGradient = { addColorStop: () => {} };
+  const mockCtx = new Proxy(
+    {
+      fillStyle: "#000",
+      strokeStyle: "#fff",
+      lineWidth: 1,
+      globalAlpha: 1,
+      font: "12px sans-serif",
+      textAlign: "left",
+      textBaseline: "middle",
+      shadowColor: "transparent",
+      shadowBlur: 0,
+      createLinearGradient: () => mockGradient,
+      createRadialGradient: () => mockGradient,
+      measureText: (txt: string) => ({ width: txt.length * 10 }),
+    },
+    {
+      get(target, prop) {
+        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+        return noop;
+      },
+    }
+  ) as unknown as CanvasRenderingContext2D;
+
+  renderProjectFrameToCanvas(mockCtx, k3dTemplate, 72);
+  assert.ok(drawCalls > 25, `Expected >25 canvas draw operations per frame, got ${drawCalls}`);
+
+  // Verify every single one of the 21 ShapeVariant types renders cleanly in renderProjectFrameToCanvas
+  const allShapeVariants = [
+    "rect",
+    "circle",
+    "badge",
+    "progress-bar",
+    "lower-third",
+    "code-card",
+    "gradient-backdrop",
+    "kpi-counter",
+    "bar-chart",
+    "chat-simulation",
+    "terminal-window",
+    "bento-grid",
+    "audio-waveform",
+    "cyber-shader",
+    "spotlight-callout",
+    "process-stepper",
+    "split-comparison",
+    "hud-telemetry",
+    "3d-carousel-stack",
+    "kinetic-impact-wall",
+    "3d-wireframe-prism",
+  ] as const;
+
+  for (const sv of allShapeVariants) {
+    let svCalls = 0;
+    const svCtx = new Proxy(
+      {
+        fillStyle: "#000",
+        strokeStyle: "#fff",
+        lineWidth: 1,
+        globalAlpha: 1,
+        font: "12px sans-serif",
+        textAlign: "left",
+        textBaseline: "middle",
+        measureText: (txt: string) => ({ width: txt.length * 10 }),
+      },
+      {
+        get(target, prop) {
+          if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+          return () => {
+            svCalls++;
+          };
+        },
+      }
+    ) as unknown as CanvasRenderingContext2D;
+
+    const singleVariantProj = structuredClone(k3dTemplate);
+    singleVariantProj.tracks = [
+      {
+        id: "t-sv",
+        name: "Shape Variant Test",
+        type: "shape",
+        zIndex: 20,
+        clips: [
+          {
+            id: `clip-${sv}`,
+            name: `Variant ${sv}`,
+            type: "shape",
+            shapeVariant: sv,
+            fill: "#161614",
+            startTime: 0,
+            duration: 4,
+            opacity: 1,
+            title: `Title ${sv}`,
+            subtitle: `Subtitle ${sv}`,
+            sceneTransition: "shutter-wipe",
+            transform: { x: 0, y: 0, scale: 1, rotation: 0, width: 60 },
+            enterAnimation: { type: "fade", duration: 0.2 },
+            exitAnimation: { type: "fade", duration: 0.2 },
+          },
+        ],
+      },
+    ];
+    renderProjectFrameToCanvas(svCtx, singleVariantProj, 10);
+    assert.ok(svCalls > 5, `ShapeVariant "${sv}" must execute canvas drawing operations (got ${svCalls})`);
+  }
+  console.log("[PASS] 9. Unified Frame Compositor (All 21 ShapeVariants) & WebGL Shader / Matrix Pipeline");
+
+  // 10. Honest RenderJob Lifecycle & Non-Fake CLI Render Pipeline
+  const { spawnSync } = await import("node:child_process");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  // 10a. WebM render job without executeNow should be queued (not falsely completed)
+  assert.equal(
+    renderJson.job.status,
+    "queued",
+    "Render job without executeNow must start in 'queued' status"
+  );
+  assert.equal(renderJson.job.progress, 0);
+  assert.ok((renderJson.job.frameCount ?? 0) > 0);
+
+  // 10b. PATCH /api/render rejects invalid status & 0-byte completed artifacts, and clamps progress
+  const badStatusReq = new NextRequest("http://localhost:3000/api/render", {
+    method: "PATCH",
+    body: JSON.stringify({
+      jobId: renderJson.job.id,
+      status: "bogus-status",
+    }),
+    headers: { "content-type": "application/json" },
+  });
+  const badStatusRes = await renderRoute.PATCH(badStatusReq);
+  assert.equal(badStatusRes.status, 400, "Invalid RenderJob status must return 400");
+
+  const zeroByteReq = new NextRequest("http://localhost:3000/api/render", {
+    method: "PATCH",
+    body: JSON.stringify({
+      jobId: renderJson.job.id,
+      status: "completed",
+      fileSizeBytes: 0,
+    }),
+    headers: { "content-type": "application/json" },
+  });
+  const zeroByteRes = await renderRoute.PATCH(zeroByteReq);
+  assert.equal(zeroByteRes.status, 400, "Completing RenderJob with 0 bytes must return 400");
+
+  // Valid transition to completed with progress clamping (999 -> 100)
+  const patchRenderReq = new NextRequest("http://localhost:3000/api/render", {
+    method: "PATCH",
+    body: JSON.stringify({
+      jobId: renderJson.job.id,
+      status: "completed",
+      progress: 999,
+      fileSizeBytes: 65536,
+    }),
+    headers: { "content-type": "application/json" },
+  });
+  const patchRenderRes = await renderRoute.PATCH(patchRenderReq);
+  const patchRenderJson = await patchRenderRes.json();
+  assert.equal(patchRenderJson.ok, true);
+  assert.equal(patchRenderJson.job.status, "completed");
+  assert.equal(patchRenderJson.job.progress, 100, "Progress must clamp to [0, 100]");
+  assert.equal(patchRenderJson.job.fileSizeBytes, 65536);
+
+  // 10c. JSON bundle synchronous export completes honestly with real file on disk
+  const bundleRenderReq = new NextRequest("http://localhost:3000/api/render", {
+    method: "POST",
+    body: JSON.stringify({ format: "json-bundle" }),
+    headers: { "content-type": "application/json" },
+  });
+  const bundleRenderRes = await renderRoute.POST(bundleRenderReq);
+  const bundleRenderJson = await bundleRenderRes.json();
+  assert.equal(bundleRenderJson.ok, true);
+  assert.equal(bundleRenderJson.job.status, "completed");
+  assert.ok((bundleRenderJson.job.fileSizeBytes ?? 0) > 500);
+
+  // 10d. CLI script for .json output succeeds and writes real timeline bundle + manifest
+  const testJsonOut = path.join(process.cwd(), "out", "verify-cli-bundle.json");
+  const cliJsonRun = spawnSync(
+    process.execPath,
+    [
+      path.join(process.cwd(), "scripts", "render-ffmpeg.mjs"),
+      "--project",
+      "proj-kinetic-3d",
+      "--output",
+      testJsonOut,
+    ],
+    { encoding: "utf8" }
+  );
+  assert.equal(cliJsonRun.status, 0, "CLI .json export must exit 0");
+  assert.ok(fs.existsSync(testJsonOut), "CLI .json bundle file must exist");
+  try {
+    fs.unlinkSync(testJsonOut);
+  } catch {
+    // ignore cleanup error
+  }
+
+  // 10e. Check if ffmpeg is installed; if not, CLI video export MUST fail honestly (exit 1) and NOT write a fake stub
+  const ffmpegProbe = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
+  if (ffmpegProbe.status !== 0) {
+    const testFakeVideoOut = path.join(process.cwd(), "out", "verify-no-fake.webm");
+    try {
+      if (fs.existsSync(testFakeVideoOut)) fs.unlinkSync(testFakeVideoOut);
+    } catch {
+      // ignore
+    }
+    const cliVideoRun = spawnSync(
+      process.execPath,
+      [
+        path.join(process.cwd(), "scripts", "render-ffmpeg.mjs"),
+        "--project",
+        "proj-kinetic-3d",
+        "--output",
+        testFakeVideoOut,
+      ],
+      { encoding: "utf8" }
+    );
+    assert.notEqual(
+      cliVideoRun.status,
+      0,
+      "CLI video export without FFmpeg must fail honestly with non-zero exit code"
+    );
+    assert.equal(
+      fs.existsSync(testFakeVideoOut),
+      false,
+      "CLI must NOT write a fake header-only .webm file when FFmpeg is unavailable"
+    );
+  }
+  console.log("[PASS] 10. Honest RenderJob Lifecycle & Non-Fake CLI Render Pipeline");
+
+  // 11. API Security (Authentication, Rate Limiting, Payload Cap) & Atomic Store Mutex
+  const { resetRateLimitBuckets } = await import("../src/lib/server/security");
+  const { withStoreWriteLock } = await import("../src/lib/server/project-store");
+
+  // 11a. API Key authentication guard when AGVI_API_KEY is configured
+  const prevApiKey = process.env.AGVI_API_KEY;
+  process.env.AGVI_API_KEY = "test-secret-key-999";
+  try {
+    const unauthReq = new NextRequest("http://localhost:3000/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ name: "Unauthorized Project" }),
+      headers: { "content-type": "application/json" },
+    });
+    const unauthRes = await projectsRoute.POST(unauthReq);
+    assert.equal(unauthRes.status, 401, "Missing API key must return 401");
+
+    const authReq = new NextRequest("http://localhost:3000/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ templateId: "kinetic-3d-keynote" }),
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": "test-secret-key-999",
+      },
+    });
+    const authRes = await projectsRoute.POST(authReq);
+    assert.equal(authRes.status, 200, "Valid x-api-key must return 200");
+  } finally {
+    if (prevApiKey === undefined) {
+      delete process.env.AGVI_API_KEY;
+    } else {
+      process.env.AGVI_API_KEY = prevApiKey;
+    }
+  }
+
+  // 11b. Sliding-window rate limiter returns 429 when limit exceeded
+  resetRateLimitBuckets();
+  const prevMax = process.env.AGVI_RATE_LIMIT_MAX;
+  process.env.AGVI_RATE_LIMIT_MAX = "2";
+  try {
+    for (let i = 0; i < 2; i++) {
+      const okReq = new NextRequest("http://localhost:3000/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ templateId: "kinetic-3d-keynote" }),
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "198.51.100.42",
+        },
+      });
+      const okRes = await projectsRoute.POST(okReq);
+      assert.equal(okRes.status, 200);
+    }
+    const limitedReq = new NextRequest("http://localhost:3000/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ templateId: "kinetic-3d-keynote" }),
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": "198.51.100.42",
+      },
+    });
+    const limitedRes = await projectsRoute.POST(limitedReq);
+    assert.equal(limitedRes.status, 429, "Exceeding rate limit must return 429");
+  } finally {
+    if (prevMax === undefined) {
+      delete process.env.AGVI_RATE_LIMIT_MAX;
+    } else {
+      process.env.AGVI_RATE_LIMIT_MAX = prevMax;
+    }
+    resetRateLimitBuckets();
+  }
+
+  // 11c. Concurrent write mutex serializes operations in strict order
+  const order: number[] = [];
+  await Promise.all([
+    withStoreWriteLock(async () => {
+      await new Promise((r) => setTimeout(r, 15));
+      order.push(1);
+    }),
+    withStoreWriteLock(async () => {
+      order.push(2);
+    }),
+  ]);
+  assert.deepEqual(order, [1, 2], "withStoreWriteLock must serialize concurrent mutations");
+  console.log("[PASS] 11. API Auth (401/200), Rate Limiting (429), and Atomic Store Write Mutex");
+
+  // 12. Dual-Mode Storyboard Director (Heuristic Fallback + Mock LLM Provider + Malformed JSON Recovery) & Procedural Audio Schedule
+  const { compilePromptToStoryboardWithLLM } = await import(
+    "../src/lib/server/llm-director"
+  );
+  const { buildProjectAudioSchedule } = await import(
+    "../src/lib/audio/procedural-sound-engine"
+  );
+
+  const llmFallbackRes = await compilePromptToStoryboardWithLLM(
+    "Kinetic 3D product reveal with 60fps camera orbit",
+    "16:9",
+    "kinetic-3d-keynote"
+  );
+  assert.equal(llmFallbackRes.compilerMode, "deterministic-heuristic");
+  assert.equal(llmFallbackRes.scenes.length, 4);
+
+  // Test LLM provider path with mocked fetch (valid JSON response + malformed JSON recovery)
+  const origFetch = globalThis.fetch;
+  const prevOpenAiKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "sk-mock-verification-key";
+  try {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  title: "LLM Bespoke 3D Architecture",
+                  aspectRatio: "16:9",
+                  designDirection: "kinetic-3d-keynote",
+                  scenes: [
+                    {
+                      duration: 4,
+                      layoutPattern: "statement-only",
+                      headline: "LLM Synthesized 3D Stage",
+                      subheadline: "Structured JSON output from OpenAI Director",
+                      narration: "Scene one generated by LLM director",
+                      cameraMotion: "orbit-3d-left",
+                      sceneTransition: "3d-cube-spin",
+                      textEffect: "kinetic-char-3d",
+                      widgetType: "3d-carousel-stack",
+                      lowerThirdTitle: "01 / LLM DIRECTOR",
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+
+    const llmSuccess = await compilePromptToStoryboardWithLLM(
+      "Build a bespoke 3D architecture showcase",
+      "16:9",
+      "kinetic-3d-keynote"
+    );
+    assert.equal(llmSuccess.compilerMode, "llm-provider");
+    assert.equal(llmSuccess.providerName, "openai");
+    assert.equal(llmSuccess.title, "LLM Bespoke 3D Architecture");
+    assert.equal(llmSuccess.scenes[0].headline, "LLM Synthesized 3D Stage");
+
+    // Verify POST /api/agent/actions with action: "generate_from_prompt" also invokes LLM compiler
+    const actionGenReq = new NextRequest("http://localhost:3000/api/agent/actions", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "generate_from_prompt",
+        prompt: "Build a bespoke 3D architecture showcase",
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const actionGenRes = await actionsRoute.POST(actionGenReq);
+    const actionGenJson = await actionGenRes.json();
+    assert.equal(actionGenJson.ok, true);
+    assert.equal(actionGenJson.compilerMode, "llm-provider");
+    assert.equal(actionGenJson.providerName, "openai");
+
+    // Malformed / adversarial LLM JSON response must gracefully recover to deterministic-heuristic
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "```json\n{ malformed_json: true " } }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+
+    const llmRecovered = await compilePromptToStoryboardWithLLM(
+      "Recover from broken JSON",
+      "16:9",
+      "kinetic-3d-keynote"
+    );
+    assert.equal(llmRecovered.compilerMode, "deterministic-heuristic");
+    assert.equal(llmRecovered.scenes.length, 4);
+  } finally {
+    globalThis.fetch = origFetch;
+    if (prevOpenAiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = prevOpenAiKey;
+    }
+  }
+
+  const audioEvents = buildProjectAudioSchedule(k3dTemplate);
+  assert.ok(audioEvents.length >= 6, "Audio schedule must include beats and scene transition SFX");
+  assert.ok(audioEvents.some((e) => e.type === "whoosh" || e.type === "sub-impact-drop"));
+  console.log("[PASS] 12. Dual-Mode Storyboard Director (Live Mock + Malformed Fallback) & Procedural Audio Schedule");
+
+  // Final cleanup: ensure active project is proj-kinetic-3d
+  executeAgentAction({
+    action: "apply_template",
+    templateId: "kinetic-3d-keynote",
+  });
+
+  console.log("=== ALL 12 VERIFICATION SUITES PASSED ===");
 }
 
 verifyApiRoutes().catch((err) => {

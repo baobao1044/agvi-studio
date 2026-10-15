@@ -3,7 +3,9 @@ import {
   getProjectById,
   saveProject,
   setActiveProject,
+  withStoreWriteLock,
 } from "@/lib/server/project-store";
+import { verifyApiSecurity } from "@/lib/server/security";
 
 export async function GET(
   _request: NextRequest,
@@ -26,6 +28,11 @@ export async function PUT(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const sec = verifyApiSecurity(request);
+  if (!sec.allowed) {
+    return Response.json({ ok: false, error: sec.error }, { status: sec.status });
+  }
+
   try {
     const { id } = await ctx.params;
     const body = await request.json();
@@ -34,7 +41,9 @@ export async function PUT(
         ? body.agentName
         : request.headers.get("x-agent-name") || "External AI Agent";
     const rawProject = body.project ?? body;
-    const saved = saveProject({ ...rawProject, id }, agentName, true);
+    const saved = await withStoreWriteLock(() =>
+      saveProject({ ...rawProject, id }, agentName, true)
+    );
     return Response.json({
       ok: true,
       project: saved.project,
@@ -55,11 +64,16 @@ export async function PATCH(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const sec = verifyApiSecurity(request);
+  if (!sec.allowed) {
+    return Response.json({ ok: false, error: sec.error }, { status: sec.status });
+  }
+
   try {
     const { id } = await ctx.params;
     const body = await request.json();
     if (body.setActive) {
-      const active = setActiveProject(id);
+      const active = await withStoreWriteLock(() => setActiveProject(id));
       if (!active) {
         return Response.json(
           { ok: false, error: `Project "${id}" not found` },
@@ -70,7 +84,9 @@ export async function PATCH(
     }
     const existing = getProjectById(id);
     const merged = { ...existing, ...body, id };
-    const saved = saveProject(merged, body.agentName || "External AI Agent", true);
+    const saved = await withStoreWriteLock(() =>
+      saveProject(merged, body.agentName || "External AI Agent", true)
+    );
     return Response.json({
       ok: true,
       project: saved.project,
