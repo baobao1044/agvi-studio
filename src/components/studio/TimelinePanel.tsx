@@ -395,33 +395,37 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
         {/* Quick Add Studio Widgets + Zoom */}
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] text-slate-400 hidden xl:flex items-center gap-1 mr-1">
-            <Sparkles className="w-3 h-3 text-sky-400" /> Add Widget:
+            <Sparkles className="w-3 h-3 text-lime-400" /> Add Layer:
           </span>
           <button
-            onClick={() => onQuickAddClip("shape", undefined, "kpi-counter")}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-[11px] text-indigo-200 border border-indigo-500/40 transition cursor-pointer"
+            onClick={() =>
+              onQuickAddClip("shape", undefined, "3d-wireframe-prism")
+            }
+            className="flex items-center gap-1 px-2 py-1 rounded bg-lime-400/20 hover:bg-lime-400/30 text-[11px] text-lime-200 border border-lime-400/50 transition cursor-pointer"
           >
-            <Plus className="w-3 h-3 text-indigo-400" /> KPI Card
-          </button>
-          <button
-            onClick={() => onQuickAddClip("shape", undefined, "bar-chart")}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-[11px] text-sky-200 border border-sky-500/40 transition cursor-pointer"
-          >
-            <BarChart3 className="w-3 h-3 text-sky-400" /> Chart
+            <Plus className="w-3 h-3 text-lime-400" /> 3D Prism
           </button>
           <button
             onClick={() =>
-              onQuickAddClip("shape", undefined, "chat-simulation")
+              onQuickAddClip("shape", undefined, "3d-carousel-stack")
             }
-            className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-[11px] text-emerald-200 border border-emerald-500/40 transition cursor-pointer"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-[11px] text-indigo-200 border border-indigo-500/40 transition cursor-pointer"
           >
-            <Plus className="w-3 h-3 text-emerald-400" /> AI Chat
+            <Plus className="w-3 h-3 text-indigo-400" /> 3D Stack
+          </button>
+          <button
+            onClick={() =>
+              onQuickAddClip("shape", undefined, "kinetic-impact-wall")
+            }
+            className="flex items-center gap-1 px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-[11px] text-sky-200 border border-sky-500/40 transition cursor-pointer"
+          >
+            <BarChart3 className="w-3 h-3 text-sky-400" /> Kinetic Wall
           </button>
           <button
             onClick={() => onQuickAddClip("text")}
             className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800/90 hover:bg-slate-700 text-[11px] text-slate-200 border border-slate-700/70 transition cursor-pointer"
           >
-            <Plus className="w-3 h-3 text-purple-400" /> Title
+            <Plus className="w-3 h-3 text-purple-400" /> 3D Title
           </button>
           <button
             onClick={() => onQuickAddClip("caption")}
@@ -628,12 +632,37 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             </div>
                           )}
 
+                          {/* Keyframe Diamond Markers on Clip Timeline */}
+                          {clip.keyframes && clip.keyframes.length > 0 && (
+                            <div className="absolute inset-x-1 bottom-0.5 h-2 pointer-events-none z-20">
+                              {clip.keyframes.map((kf, kIdx) => (
+                                <span
+                                  key={kIdx}
+                                  style={{
+                                    left: `${Math.min(96, Math.max(2, kf.offset * 100))}%`,
+                                  }}
+                                  className="absolute -translate-x-1/2 text-[8px] leading-none text-lime-300 drop-shadow-[0_0_4px_rgba(204,255,0,0.9)]"
+                                >
+                                  ◆
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                           <div className="truncate flex items-center gap-1.5 relative z-10 pointer-events-none">
                             <span
                               className={`text-[11px] font-semibold truncate ${palette.text}`}
                             >
                               {clip.name}
                             </span>
+                            {(Boolean(clip.transform.z) ||
+                              Boolean(clip.transform.rotateX) ||
+                              Boolean(clip.transform.rotateY) ||
+                              (clip.keyframes && clip.keyframes.length > 0)) && (
+                              <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-lime-400/20 text-lime-300 border border-lime-400/40">
+                                3D{clip.keyframes?.length ? `•${clip.keyframes.length}KF` : ""}
+                              </span>
+                            )}
                             {clip.type === "shape" && (
                               <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/30 text-indigo-200">
                                 {clip.shapeVariant}

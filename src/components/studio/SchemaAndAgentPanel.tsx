@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -48,6 +48,13 @@ const PROMPT_CHIPS: Array<{
   direction: DesignDirectionId;
 }> = [
   {
+    label: "00 / Kinetic 3D Keynote (60fps)",
+    prompt:
+      "Dựng video Motion Graphics 3D nhịp độ cao 60fps với Camera Orbit 3D, đồ thị vận tốc Multi-Keyframe Whip và Kinetic Typography",
+    ratio: "16:9",
+    direction: "kinetic-3d-keynote",
+  },
+  {
     label: "01 / Swiss Industrial (16:9)",
     prompt:
       "Giải thích kiến trúc trình dựng video bằng JSON Schema ở tốc độ 30fps, 6 tracks đồng bộ",
@@ -74,6 +81,30 @@ const PRESET_AGENT_PAYLOADS: Record<
   string,
   { label: string; description: string; payload: AgentActionPayload }
 > = {
+  kinetic3DScene: {
+    label: "00. 1-Call High-Tempo 3D & Kinetic Choreography",
+    description:
+      "Action: choreograph_3d_kinetic_scene — Attaches 6-DOF 3D Camera Rig, WebGL Wireframe Stage, 4-Point Whip Keyframe Graph & Directional Motion Blur.",
+    payload: {
+      action: "choreograph_3d_kinetic_scene",
+      agentName: "AGVI 3D Kinetic Director",
+      designDirection: "kinetic-3d-keynote",
+      videoSrc: "procedural-video://webgl-3d-prism",
+      cameraMotion: "orbit-3d-left",
+      sceneTransition: "3d-cube-spin",
+      textEffect: "kinetic-char-3d",
+      filter: {
+        motionBlur: 0.75,
+        chromaticAberration: 0.45,
+        cameraShake: 0.35,
+      },
+      motionOverlay: {
+        preset: "3d-parallax-grid",
+        title: "6-DOF 3D KINETIC STAGE // 60 FPS",
+        subtitle: "PERSPECTIVE 1400PX • VELOCITY GRAPH",
+      },
+    },
+  },
   hybridVideoMotion: {
     label: "01. 1-Call Hybrid Video + Motion Rig",
     description:
@@ -95,16 +126,16 @@ const PRESET_AGENT_PAYLOADS: Record<
     },
   },
   promptDirector: {
-    label: "02. Hybrid Prompt-to-Video Compiler",
+    label: "02. High-Tempo 3D Prompt-to-Video Compiler",
     description:
-      "Action: generate_from_prompt — Compiles 4 scenes combining live video streams, camera rigs, spotlight callouts & process steppers.",
+      "Action: generate_from_prompt — Compiles 4 60fps 3D scenes with WebGL prisms, 3D camera rigs, velocity keyframes & kinetic stomp walls.",
     payload: {
       action: "generate_from_prompt",
-      agentName: "AGVI Editorial Director",
+      agentName: "AGVI 3D Editorial Director",
       aspectRatio: "16:9",
-      designDirection: "swiss-industrial",
+      designDirection: "kinetic-3d-keynote",
       prompt:
-        "Tích hợp hiệu ứng Motion Graphics trực tiếp vào video thực tế với Camera Rig, Spotlight Callout và bộ lọc Anti-Slop",
+        "Dựng video Motion Graphics 3D nhịp độ cao 60fps với Camera 6-DOF, đồ thị vận tốc Multi-Keyframe Whip, 3D Carousel và Motion Blur",
     },
   },
   storyboard: {
@@ -177,7 +208,7 @@ const PRESET_AGENT_PAYLOADS: Record<
           narration:
             "Cảnh kết dựng khung hình nghiêng ba chiều và hiển thị mã lệnh điều khiển trực tiếp",
           widgetType: "code-card",
-          codeSnippet: `{\n  "action": "enhance_video_with_motion",\n  "cameraMotion": "focus-zoom-left",\n  "motionOverlay": {\n    "preset": "spotlight-pointer"\n  }\n}`,
+          codeSnippet: `{\n  "action": "choreograph_3d_kinetic_scene",\n  "cameraMotion": "orbit-3d-left",\n  "sceneTransition": "3d-cube-spin",\n  "textEffect": "kinetic-char-3d"\n}`,
           lowerThirdTitle: "04 / 3D RIG + API",
         },
       ],
@@ -186,11 +217,11 @@ const PRESET_AGENT_PAYLOADS: Record<
   switchDirection: {
     label: "04. Switch Art Direction Preset",
     description:
-      "Action: set_design_direction — Switches palette & typography to Warm Editorial (Paper Ink + Vermilion).",
+      "Action: set_design_direction — Switches palette & typography to Kinetic 3D Stage (Obsidian + Volt Lime).",
     payload: {
       action: "set_design_direction",
       agentName: "Art Direction Agent",
-      designDirection: "warm-editorial",
+      designDirection: "kinetic-3d-keynote",
     },
   },
 };
@@ -234,18 +265,16 @@ export const SchemaAndAgentPanel: React.FC<SchemaAndAgentPanelProps> = ({
   const [copiedJson, setCopiedJson] = useState(false);
   const [copiedTools, setCopiedTools] = useState(false);
 
-  useEffect(() => {
+  const [prevProject, setPrevProject] = useState<AGVIProject>(project);
+  if (project !== prevProject) {
+    setPrevProject(project);
     setJsonText(JSON.stringify(project, null, 2));
     setPromptRatio(project.canvas.aspectRatio);
-    if (project.agentMeta?.designDirection) {
-      setSelectedDirection(
-        project.agentMeta.designDirection as DesignDirectionId
-      );
-    }
+    setSelectedDirection(currentDirectionId);
     setParseError(null);
     setValidationIssues([]);
     setIsJsonValid(true);
-  }, [project]);
+  }
 
   const handleGenerateFromPrompt = async (
     customPrompt?: string,
@@ -758,7 +787,9 @@ export const SchemaAndAgentPanel: React.FC<SchemaAndAgentPanelProps> = ({
                       {log.action}
                     </span>
                     <span className="text-[10px] text-[#9A9890] font-mono">
-                      {new Date(log.timestamp).toLocaleTimeString()}
+                      {typeof log.timestamp === "string" && log.timestamp.includes("T")
+                        ? log.timestamp.split("T")[1]?.slice(0, 8) || log.timestamp
+                        : log.timestamp}
                     </span>
                   </div>
                   <p className="text-[11px] text-[#F2F0EA]">{log.summary}</p>

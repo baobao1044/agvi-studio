@@ -8,6 +8,16 @@ export type TrackType =
   | "shape"
   | "audio";
 
+export type EasingPreset =
+  | "linear"
+  | "ease-in-out"
+  | "expo-out"
+  | "expo-in"
+  | "whip"
+  | "back-out"
+  | "elastic"
+  | "bounce";
+
 export type AnimationType =
   | "none"
   | "fade"
@@ -18,7 +28,15 @@ export type AnimationType =
   | "zoom-in"
   | "zoom-out"
   | "pop-spring"
-  | "blur-in";
+  | "blur-in"
+  | "whip-left"
+  | "whip-right"
+  | "whip-up"
+  | "3d-flip-x"
+  | "3d-flip-y"
+  | "3d-fly-through"
+  | "kinetic-slam"
+  | "elastic-stomp";
 
 export type KenBurnsEffect =
   | "none"
@@ -34,14 +52,24 @@ export type CameraMotionEffect =
   | "focus-zoom-right"
   | "isometric-3d-frame"
   | "split-stage-left"
-  | "letterbox-cinema";
+  | "letterbox-cinema"
+  | "orbit-3d-left"
+  | "orbit-3d-right"
+  | "fly-through-z"
+  | "whip-pan-3d"
+  | "dutch-roll-impact"
+  | "hyper-push-in";
 
 export type SceneTransitionEffect =
   | "none"
   | "shutter-wipe"
   | "editorial-curtain"
   | "iris-frame"
-  | "flash-cut";
+  | "flash-cut"
+  | "whip-blur-cut"
+  | "3d-cube-spin"
+  | "glitch-slice"
+  | "zoom-punch";
 
 export type MotionOverlayPreset =
   | "none"
@@ -49,7 +77,8 @@ export type MotionOverlayPreset =
   | "hud-telemetry"
   | "lower-chyron"
   | "step-annotations"
-  | "split-compare";
+  | "split-compare"
+  | "3d-parallax-grid";
 
 export interface ProcessStepItem {
   step: string;
@@ -98,17 +127,42 @@ export type ShapeVariant =
   | "spotlight-callout"
   | "process-stepper"
   | "split-comparison"
-  | "hud-telemetry";
+  | "hud-telemetry"
+  | "3d-carousel-stack"
+  | "kinetic-impact-wall"
+  | "3d-wireframe-prism";
+
+export interface ClipKeyframe {
+  /** Normalized progress within clip (0.0 = start, 1.0 = end) */
+  offset: number;
+  x?: number;
+  y?: number;
+  /** 3D Z-depth in pixels (-1500 to +1200, 0 = focal plane) */
+  z?: number;
+  scale?: number;
+  rotation?: number;
+  rotateX?: number;
+  rotateY?: number;
+  opacity?: number;
+  blur?: number;
+  easing?: EasingPreset;
+}
 
 export interface ClipTransform {
   /** Horizontal center offset in percentage of canvas width (-50 to 50, 0 = center) */
   x: number;
   /** Vertical center offset in percentage of canvas height (-50 to 50, 0 = center) */
   y: number;
+  /** 3D Z-space depth in pixels (-1200 to +800, 0 = stage plane) */
+  z?: number;
   /** Scale multiplier (1 = 100%) */
   scale: number;
-  /** Rotation in degrees */
+  /** Z-axis Rotation in degrees */
   rotation: number;
+  /** 3D X-axis Pitch in degrees */
+  rotateX?: number;
+  /** 3D Y-axis Yaw in degrees */
+  rotateY?: number;
   /** Width in percentage of canvas width (0-100) */
   width?: number;
   /** Height in percentage of canvas height (0-100) */
@@ -119,6 +173,8 @@ export interface ClipAnimation {
   type: AnimationType;
   /** Duration in seconds */
   duration: number;
+  /** Optional custom velocity graph easing */
+  easing?: EasingPreset;
 }
 
 export interface ClipFilter {
@@ -127,6 +183,12 @@ export interface ClipFilter {
   contrast?: number;
   saturate?: number;
   grayscale?: number;
+  /** Automatic velocity-driven directional motion blur (0 = off, 1 = standard AE shutter, 2 = hyper) */
+  motionBlur?: number;
+  /** RGB chromatic aberration split on fast velocity transitions (0 to 1) */
+  chromaticAberration?: number;
+  /** Camera impact shake intensity at clip entrance (0 to 2) */
+  cameraShake?: number;
 }
 
 export interface BaseClip {
@@ -142,8 +204,10 @@ export interface BaseClip {
   transform: ClipTransform;
   enterAnimation: ClipAnimation;
   exitAnimation: ClipAnimation;
+  /** Optional After Effects-style multi-point keyframe track */
+  keyframes?: ClipKeyframe[];
   filter?: ClipFilter;
-  /** Declarative scene entrance transition (shutter-wipe, iris-frame, etc.) */
+  /** Declarative scene entrance transition (shutter-wipe, iris-frame, whip-blur-cut, 3d-cube-spin, etc.) */
   sceneTransition?: SceneTransitionEffect;
   /** Optional metadata for AI agents (e.g. prompt, sceneId, reasoning) */
   aiMetadata?: {
@@ -163,7 +227,7 @@ export interface VideoClip extends BaseClip {
   loop?: boolean;
   objectFit?: "cover" | "contain";
   borderRadius?: number;
-  /** Smart camera rig (e.g. focus-zoom-left, isometric-3d-frame, split-stage-left) */
+  /** Smart camera rig (e.g. focus-zoom-left, isometric-3d-frame, orbit-3d-left, fly-through-z) */
   cameraMotion?: CameraMotionEffect;
   /** Zero-effort motion graphics composited directly onto this video clip */
   motionOverlay?: VideoMotionOverlay;
@@ -177,7 +241,7 @@ export interface ImageClip extends BaseClip {
   borderRadius?: number;
   overlayColor?: string;
   overlayOpacity?: number;
-  /** Smart camera rig (e.g. focus-zoom-left, isometric-3d-frame, split-stage-left) */
+  /** Smart camera rig (e.g. focus-zoom-left, isometric-3d-frame, orbit-3d-left, fly-through-z) */
   cameraMotion?: CameraMotionEffect;
   /** Zero-effort motion graphics composited directly onto this image clip */
   motionOverlay?: VideoMotionOverlay;
@@ -199,11 +263,21 @@ export interface TextStyleConfig {
   gradientColors?: [string, string];
 }
 
+export type KineticTextEffect =
+  | "none"
+  | "typewriter"
+  | "gradient"
+  | "neon-glow"
+  | "kinetic-char-3d"
+  | "kinetic-word-stomp"
+  | "split-mask-reveal"
+  | "glitch-decode";
+
 export interface TextClip extends BaseClip {
   type: "text";
   text: string;
   subtext?: string;
-  textEffect?: "none" | "typewriter" | "gradient" | "neon-glow";
+  textEffect?: KineticTextEffect;
   style: TextStyleConfig;
 }
 
@@ -629,12 +703,19 @@ export function validateAndNormalizeProject(
         const transform: ClipTransform = {
           x: typeof rawTransform.x === "number" ? rawTransform.x : 0,
           y: typeof rawTransform.y === "number" ? rawTransform.y : 0,
+          ...(typeof rawTransform.z === "number" ? { z: rawTransform.z } : {}),
           scale:
             typeof rawTransform.scale === "number" ? rawTransform.scale : 1,
           rotation:
             typeof rawTransform.rotation === "number"
               ? rawTransform.rotation
               : 0,
+          ...(typeof rawTransform.rotateX === "number"
+            ? { rotateX: rawTransform.rotateX }
+            : {}),
+          ...(typeof rawTransform.rotateY === "number"
+            ? { rotateY: rawTransform.rotateY }
+            : {}),
           ...(typeof rawTransform.width === "number"
             ? { width: rawTransform.width }
             : {}),
@@ -656,13 +737,23 @@ export function validateAndNormalizeProject(
           type: (rawEnter.type as AnimationType) || "fade",
           duration:
             typeof rawEnter.duration === "number" ? rawEnter.duration : 0.4,
+          ...(typeof rawEnter.easing === "string"
+            ? { easing: rawEnter.easing as EasingPreset }
+            : {}),
         };
 
         const exitAnimation: ClipAnimation = {
           type: (rawExit.type as AnimationType) || "fade",
           duration:
             typeof rawExit.duration === "number" ? rawExit.duration : 0.3,
+          ...(typeof rawExit.easing === "string"
+            ? { easing: rawExit.easing as EasingPreset }
+            : {}),
         };
+
+        const keyframes: ClipKeyframe[] | undefined = Array.isArray(c.keyframes)
+          ? (c.keyframes as ClipKeyframe[])
+          : undefined;
 
         const base: BaseClip = {
           id: clipId,
@@ -674,13 +765,14 @@ export function validateAndNormalizeProject(
           transform,
           enterAnimation,
           exitAnimation,
+          ...(keyframes && keyframes.length > 0 ? { keyframes } : {}),
           ...(typeof c.sceneTransition === "string"
             ? { sceneTransition: c.sceneTransition as SceneTransitionEffect }
             : {}),
           ...(c.filter && typeof c.filter === "object"
             ? { filter: c.filter as ClipFilter }
             : {}),
-          ...(c.aiMetadata && typeof c.aiMetadata === "object"
+          ...(c.aiMetadata && typeof c.aiMetadata && typeof c.aiMetadata === "object"
             ? { aiMetadata: c.aiMetadata as BaseClip["aiMetadata"] }
             : {}),
         };
@@ -745,7 +837,11 @@ export function validateAndNormalizeProject(
               textEffect:
                 c.textEffect === "typewriter" ||
                 c.textEffect === "gradient" ||
-                c.textEffect === "neon-glow"
+                c.textEffect === "neon-glow" ||
+                c.textEffect === "kinetic-char-3d" ||
+                c.textEffect === "kinetic-word-stomp" ||
+                c.textEffect === "split-mask-reveal" ||
+                c.textEffect === "glitch-decode"
                   ? c.textEffect
                   : "none",
               style: {
@@ -891,6 +987,25 @@ export function validateAndNormalizeProject(
               stepperItems: Array.isArray(c.stepperItems)
                 ? (c.stepperItems as string[])
                 : undefined,
+              steps: Array.isArray(c.steps)
+                ? (c.steps as ProcessStepItem[])
+                : undefined,
+              compareBeforeLabel:
+                typeof c.compareBeforeLabel === "string"
+                  ? c.compareBeforeLabel
+                  : undefined,
+              compareBeforeValue:
+                typeof c.compareBeforeValue === "string"
+                  ? c.compareBeforeValue
+                  : undefined,
+              compareAfterLabel:
+                typeof c.compareAfterLabel === "string"
+                  ? c.compareAfterLabel
+                  : undefined,
+              compareAfterValue:
+                typeof c.compareAfterValue === "string"
+                  ? c.compareAfterValue
+                  : undefined,
             } satisfies ShapeClip;
         }
       });
@@ -966,9 +1081,9 @@ export function validateAndNormalizeProject(
 export function getAgentSchemaDocumentation() {
   return {
     schemaVersion: "1.0.0",
-    engine: "AGVI 2.0 (Agentic Video Engine - Remotion + Next.js + WebAudio)",
+    engine: "AGVI 3.0 (High-Tempo 3D & Kinetic Motion Graphics Engine - MIT Native + WebGL + WebAudio)",
     description:
-      "Schema-driven & API-driven video editor designed for AI Agents. Supports natural-language prompt-to-video generation, 6-track non-overlapping choreography, animated KPI counters, bar charts, AI chat simulations, terminal windows, and word-level karaoke captions.",
+      "After Effects-grade schema-driven & API-driven 3D video engine designed for AI Agents. Supports true 3D spatial coordinates (x, y, z, rotateX, rotateY, rotation, scale), virtual 3D Camera rigs (orbit-3d-left, fly-through-z, whip-pan-3d, hyper-push-in), deterministic WebGL 3D rendering, multi-point keyframe velocity graphs (whip, expo-out, back-out, elastic, bounce), kinetic typography (kinetic-char-3d, kinetic-word-stomp, split-mask-reveal, glitch-decode), velocity-driven directional motion blur, chromatic aberration, and camera shake.",
     endpoints: {
       getSchema: "GET /api/schema",
       generateFromPrompt: "POST /api/agent/generate",
@@ -983,29 +1098,59 @@ export function getAgentSchemaDocumentation() {
       {
         action: "generate_from_prompt",
         description:
-          "Magic AI Director: Pass any natural language topic, product pitch, or script in Vietnamese or English and automatically synthesize a 6-track non-overlapping video with KPI counters, bar charts, AI chat bubbles, code terminals, kinetic headlines, and karaoke captions.",
+          "Magic AI Director: Pass any natural language topic, product pitch, or script in Vietnamese or English and automatically synthesize a multi-track 3D & kinetic motion graphics video with 3D camera choreography, WebGL 3D scenes, velocity keyframes, kinetic typography, and broadcast subtitles.",
         parameters: {
           prompt: "string (required)",
           aspectRatio: "'16:9' | '9:16' | '1:1' | '4:5' (optional)",
-          stylePreset:
-            "'ai-director' | 'viral-reel' | 'saas-metrics' | 'dev-architecture' (optional)",
+          designDirection:
+            "'kinetic-3d-keynote' | 'swiss-industrial' | 'warm-editorial' | 'documentary-slate' | 'cobalt-technical' (optional)",
+        },
+      },
+      {
+        action: "choreograph_3d_kinetic_scene",
+        description:
+          "1-Call After Effects 3D & Kinetic Choreographer: Automatically upgrades a clip or scene with 3D spatial depth (z, rotateX, rotateY), multi-point velocity keyframes (whip/expo-out/elastic), directional motion blur, chromatic aberration, camera impact shake, and 3D camera rig.",
+        parameters: {
+          projectId: "string (optional)",
+          clipId: "string (optional)",
+          cameraMotion:
+            "'orbit-3d-left' | 'orbit-3d-right' | 'fly-through-z' | 'whip-pan-3d' | 'dutch-roll-impact' | 'hyper-push-in' (optional)",
+          sceneTransition:
+            "'whip-blur-cut' | '3d-cube-spin' | 'zoom-punch' | 'glitch-slice' (optional)",
+          textEffect:
+            "'kinetic-char-3d' | 'kinetic-word-stomp' | 'split-mask-reveal' | 'glitch-decode' (optional)",
+          keyframes: "Array<ClipKeyframe> (optional)",
+        },
+      },
+      {
+        action: "enhance_video_with_motion",
+        description:
+          "1-Call Hybrid Video + Motion Rig: Attach a smart 3D/2D camera rig, scene transition, and SVG motion overlay directly onto a video or WebGL 3D clip.",
+        parameters: {
+          projectId: "string (optional)",
+          clipId: "string (optional)",
+          videoSrc: "string (optional, e.g. 'procedural-video://webgl-3d-prism')",
+          cameraMotion: "CameraMotionEffect",
+          sceneTransition: "SceneTransitionEffect",
+          motionOverlay: "VideoMotionOverlay",
         },
       },
       {
         action: "build_from_storyboard",
         description:
-          "High-level AI tool: Pass a list of storyboard scenes and automatically construct a 6-track video with zero clip overlaps.",
+          "High-level AI tool: Pass a list of storyboard scenes and automatically construct a 7-track 3D & kinetic video with zero clip overlaps.",
         parameters: {
           projectId: "string (optional)",
           aspectRatio: "'16:9' | '9:16' | '1:1'",
           title: "string",
+          designDirection: "DesignDirectionId (optional)",
           scenes: "Array<StoryboardSceneInput>",
         },
       },
       {
         action: "add_clip",
         description:
-          "Add a single clip (video, image, text, caption, shape, audio) to a track with automatic collision avoidance.",
+          "Add a single clip (video, image, text, caption, shape, audio) with 3D transform and keyframes to a track with automatic collision avoidance.",
         parameters: {
           projectId: "string",
           trackId: "string (optional)",
@@ -1015,7 +1160,7 @@ export function getAgentSchemaDocumentation() {
       },
       {
         action: "update_clip",
-        description: "Patch any properties of an existing clip by clipId.",
+        description: "Patch any properties (including 3D transform, keyframes, filter, textEffect, cameraMotion) of an existing clip by clipId.",
         parameters: {
           projectId: "string",
           clipId: "string",
@@ -1064,11 +1209,11 @@ export function getAgentSchemaDocumentation() {
       },
       {
         action: "apply_template",
-        description: "Reset project to one of the 4 built-in showcase templates.",
+        description: "Reset project to one of the built-in showcase templates (including 'kinetic-3d-keynote').",
         parameters: {
           projectId: "string",
           templateId:
-            "'ai-tech-explainer' | 'tiktok-short-reel' | 'product-launch-ad' | 'mcp-agent-workflow'",
+            "'kinetic-3d-keynote' | 'ai-tech-explainer' | 'tiktok-short-reel' | 'product-launch-ad'",
         },
       },
       {
@@ -1087,7 +1232,7 @@ export function getAgentSchemaDocumentation() {
         function: {
           name: "agvi_generate_from_prompt",
           description:
-            "Generate a complete 6-track motion-graphics video from a natural language prompt or script.",
+            "Generate a complete 7-track 3D & high-tempo kinetic motion-graphics video from a natural language prompt or script.",
           parameters: {
             type: "object",
             required: ["prompt"],
@@ -1101,13 +1246,58 @@ export function getAgentSchemaDocumentation() {
                 type: "string",
                 enum: ["16:9", "9:16", "1:1", "4:5"],
               },
-              stylePreset: {
+              designDirection: {
                 type: "string",
                 enum: [
-                  "ai-director",
-                  "viral-reel",
-                  "saas-metrics",
-                  "dev-architecture",
+                  "kinetic-3d-keynote",
+                  "swiss-industrial",
+                  "warm-editorial",
+                  "documentary-slate",
+                  "cobalt-technical",
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "agvi_choreograph_3d_kinetic_scene",
+          description:
+            "Apply After Effects-style 3D camera rig, velocity curve keyframes, directional motion blur, chromatic aberration, and 3D kinetic typography in a single tool call.",
+          parameters: {
+            type: "object",
+            properties: {
+              projectId: { type: "string" },
+              clipId: { type: "string" },
+              cameraMotion: {
+                type: "string",
+                enum: [
+                  "orbit-3d-left",
+                  "orbit-3d-right",
+                  "fly-through-z",
+                  "whip-pan-3d",
+                  "dutch-roll-impact",
+                  "hyper-push-in",
+                ],
+              },
+              sceneTransition: {
+                type: "string",
+                enum: [
+                  "whip-blur-cut",
+                  "3d-cube-spin",
+                  "zoom-punch",
+                  "glitch-slice",
+                ],
+              },
+              textEffect: {
+                type: "string",
+                enum: [
+                  "kinetic-char-3d",
+                  "kinetic-word-stomp",
+                  "split-mask-reveal",
+                  "glitch-decode",
                 ],
               },
             },
@@ -1119,7 +1309,7 @@ export function getAgentSchemaDocumentation() {
         function: {
           name: "agvi_build_from_storyboard",
           description:
-            "Build a complete multi-track video timeline from a structured AI storyboard with widgets (kpi-counter, bar-chart, chat-simulation, code-card, terminal-window), kinetic titles, and karaoke captions.",
+            "Build a complete multi-track 3D & kinetic video timeline from a structured AI storyboard with 3D widgets (3d-wireframe-prism, 3d-carousel-stack, kinetic-impact-wall, kpi-counter, bar-chart, code-card), kinetic titles, and karaoke captions.",
           parameters: {
             type: "object",
             required: ["scenes"],
@@ -1130,28 +1320,56 @@ export function getAgentSchemaDocumentation() {
                 type: "string",
                 enum: ["16:9", "9:16", "1:1", "4:5"],
               },
+              designDirection: {
+                type: "string",
+                enum: [
+                  "kinetic-3d-keynote",
+                  "swiss-industrial",
+                  "warm-editorial",
+                  "documentary-slate",
+                  "cobalt-technical",
+                ],
+              },
               scenes: {
                 type: "array",
                 items: {
                   type: "object",
-                  required: ["duration", "headline", "narration"],
+                  required: ["duration", "narration"],
                   properties: {
                     duration: { type: "number" },
                     headline: { type: "string" },
                     subheadline: { type: "string" },
                     narration: { type: "string" },
-                    visualTheme: {
+                    cameraMotion: {
                       type: "string",
                       enum: [
-                        "cyber-grid",
-                        "aurora-mesh",
-                        "sunset-glow",
-                        "matrix-code",
+                        "orbit-3d-left",
+                        "orbit-3d-right",
+                        "fly-through-z",
+                        "whip-pan-3d",
+                        "dutch-roll-impact",
+                        "hyper-push-in",
+                        "focus-zoom-left",
+                        "isometric-3d-frame",
+                      ],
+                    },
+                    sceneTransition: {
+                      type: "string",
+                      enum: [
+                        "whip-blur-cut",
+                        "3d-cube-spin",
+                        "zoom-punch",
+                        "glitch-slice",
+                        "shutter-wipe",
+                        "iris-frame",
                       ],
                     },
                     widgetType: {
                       type: "string",
                       enum: [
+                        "3d-wireframe-prism",
+                        "3d-carousel-stack",
+                        "kinetic-impact-wall",
                         "kpi-counter",
                         "bar-chart",
                         "chat-simulation",

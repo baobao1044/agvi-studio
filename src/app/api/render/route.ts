@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, connection } from "next/server";
 import {
   createRenderJob,
   getProjectById,
@@ -6,6 +6,11 @@ import {
 } from "@/lib/server/project-store";
 
 export async function GET() {
+  try {
+    await connection();
+  } catch {
+    // Allow direct in-process unit test invocation outside Next.js request store
+  }
   const snapshot = getStoreSnapshot();
   return Response.json({
     ok: true,

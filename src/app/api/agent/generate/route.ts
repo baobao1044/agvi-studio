@@ -36,6 +36,10 @@ export async function POST(request: NextRequest) {
         "AGVI Prompt-to-Video Director",
       prompt,
       aspectRatio,
+      designDirection:
+        typeof body.designDirection === "string"
+          ? body.designDirection
+          : undefined,
     });
 
     return Response.json({

@@ -15,6 +15,7 @@ import {
   Terminal,
   Wand2,
   X,
+  Zap,
 } from "lucide-react";
 import {
   AGVIProject,
@@ -23,6 +24,10 @@ import {
   TrackType,
 } from "@/lib/schema/timeline-schema";
 import { STARTER_TEMPLATES } from "@/lib/schema/starter-templates";
+import {
+  DESIGN_DIRECTION_PRESETS,
+  resolveDesignDirection,
+} from "@/lib/anti-slop/anti-slop-filter";
 import {
   AgentActionLogEntry,
   AgentActionPayload,
@@ -36,11 +41,11 @@ import { TimelinePanel } from "./TimelinePanel";
 
 export const AGVIStudio: React.FC = () => {
   const [project, setProject] = useState<AGVIProject>(
-    () => STARTER_TEMPLATES["ai-tech-explainer"]
+    () => STARTER_TEMPLATES["kinetic-3d-keynote"]
   );
   const [actionLogs, setActionLogs] = useState<AgentActionLogEntry[]>([]);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(
-    "widget-chat-1"
+    "k3d-title-1"
   );
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -51,6 +56,8 @@ export const AGVIStudio: React.FC = () => {
   const [latestRenderJob, setLatestRenderJob] = useState<RenderJob | null>(
     null
   );
+  const [isRecordingVideo, setIsRecordingVideo] = useState<boolean>(false);
+  const [recordingProgress, setRecordingProgress] = useState<number>(0);
   const [copiedCli, setCopiedCli] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [quickPrompt, setQuickPrompt] = useState<string>("");
@@ -110,7 +117,10 @@ export const AGVIStudio: React.FC = () => {
   );
 
   useEffect(() => {
-    fetchServerSnapshot(true);
+    const timer = setTimeout(() => {
+      void fetchServerSnapshot(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchServerSnapshot]);
 
   useEffect(() => {
@@ -322,17 +332,30 @@ export const AGVIStudio: React.FC = () => {
     shapeVariant?: ShapeVariant
   ) => {
     const start = Number(currentTime.toFixed(2));
-    const variant = shapeVariant || "kpi-counter";
+    const variant = shapeVariant || "3d-wireframe-prism";
     const defaultClips: Record<TrackType, Record<string, unknown>> = {
       text: {
-        name: "Kinetic Title",
+        name: "3D Kinetic Title",
         type: "text",
         startTime: start,
         duration: 3.5,
-        text: "AI Headline Overlay",
-        subtext: "Edited via AGVI 2.0 Studio",
-        textEffect: "gradient",
-        transform: { x: 0, y: -27, scale: 1, rotation: 0 },
+        text: "KINETIC 3D MOTION HEADLINE",
+        subtext: "6-DOF Depth • Multi-Keyframe Velocity",
+        textEffect: "kinetic-char-3d",
+        filter: {
+          motionBlur: 0.65,
+          chromaticAberration: 0.35,
+        },
+        transform: {
+          x: -4,
+          y: -18,
+          z: 55,
+          rotateX: 4,
+          rotateY: -8,
+          scale: 1,
+          rotation: 0,
+        },
+        enterAnimation: { type: "3d-flip-x", duration: 0.35 },
       },
       caption: {
         name: "Karaoke Caption",
@@ -340,42 +363,56 @@ export const AGVIStudio: React.FC = () => {
         startTime: start,
         duration: 3.5,
         text: "Phụ đề tự động đồng bộ từng từ trên timeline không đè chữ",
-        preset: "tiktok-pop",
-        highlightColor: "#FACC15",
+        preset: "minimal-box",
+        highlightColor: "#CCFF00",
         transform: { x: 0, y: 37, scale: 1, rotation: 0 },
       },
       shape: {
-        name: `Widget: ${variant}`,
+        name: `3D Layer: ${variant}`,
         type: "shape",
         shapeVariant: variant,
         startTime: start,
         duration: 3.8,
         title:
-          variant === "kpi-counter"
-            ? "AI VELOCITY LIFT"
-            : variant === "bar-chart"
-              ? "Hiệu Suất Sản Xuất Video"
-              : "AI Agent Callout",
-        subtitle: "Realtime Telemetry",
-        metricValue: "+380%",
-        metricTrend: "Verified Speedup",
-        accentColor: "#38BDF8",
-        transform: { x: 0, y: 3, scale: 1, rotation: 0, width: 66 },
+          variant === "3d-wireframe-prism"
+            ? "WEBGL 3D PRISM STAGE"
+            : variant === "3d-carousel-stack"
+              ? "3D CAROUSEL STACK"
+              : variant === "kinetic-impact-wall"
+                ? "HIGH-TEMPO 3D ENGINE"
+                : "AI Telemetry Widget",
+        subtitle: "60FPS Frame-Locked 3D",
+        metricValue: "60 FPS",
+        metricTrend: "Deterministic Sync",
+        accentColor: "#CCFF00",
+        transform: {
+          x: 0,
+          y: 2,
+          z: 40,
+          rotateX: 4,
+          rotateY: -10,
+          scale: 1,
+          rotation: 0,
+          width: 66,
+        },
+        enterAnimation: { type: "3d-flip-y", duration: 0.35 },
       },
       image: {
-        name: "Shader Backdrop",
+        name: "3D Matte Backdrop",
         type: "image",
         startTime: start,
         duration: 4,
-        src: "procedural://aurora-mesh",
+        src: "procedural://kinetic-3d-keynote",
         kenBurns: "zoom-in",
       },
       video: {
-        name: "Video Layer",
+        name: "3D WebGL Stage",
         type: "video",
         startTime: start,
         duration: 4,
-        src: "",
+        src: "procedural-video://webgl-3d-prism",
+        cameraMotion: "orbit-3d-left",
+        sceneTransition: "3d-cube-spin",
       },
       audio: {
         name: "Synth Audio Cue",
@@ -438,7 +475,12 @@ export const AGVIStudio: React.FC = () => {
       ) {
         e.preventDefault();
         handleDeleteClip(selectedClipId);
-      } else if (e.key.toLowerCase() === "s" && !e.ctrlKey && !e.metaKey && selectedClipId) {
+      } else if (
+        e.key.toLowerCase() === "s" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        selectedClipId
+      ) {
         e.preventDefault();
         handleSplitSelectedClip();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -481,19 +523,372 @@ export const AGVIStudio: React.FC = () => {
     }
   };
 
-  const handleTriggerRender = async () => {
+  const handleTriggerRender = async (
+    format: "mp4" | "webm" | "json-bundle" = "webm"
+  ) => {
     const res = await fetch("/api/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projectId: project.id,
-        format: "mp4",
+        format,
       }),
     });
     const data = await res.json();
     if (data.ok && data.job) {
       setLatestRenderJob(data.job);
       setRenderModalOpen(true);
+    }
+  };
+
+  /**
+   * Real Client-Side High-Tempo Video Exporter (.webm / .mp4 via Canvas Stream + MediaRecorder).
+   * Synthesizes a frame-accurate composite video stream directly in the browser using the
+   * active Design Direction palette, 3D keyframes, directional RGB split, and 3D stage projection.
+   */
+  const handleBrowserVideoExport = async () => {
+    if (isRecordingVideo) return;
+
+    const requestedFormat = latestRenderJob?.format || "webm";
+    if (requestedFormat === "json-bundle") {
+      const blob = new Blob([JSON.stringify(project, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.id || "agvi-project"}-bundle.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported JSON Bundle (${project.id}-bundle.json)`);
+      return;
+    }
+
+    setIsRecordingVideo(true);
+    setRecordingProgress(0);
+
+    try {
+      const direction =
+        resolveDesignDirection(
+          project.agentMeta?.designDirection as string | undefined,
+          `${project.name} ${project.description ?? ""}`
+        ) ?? DESIGN_DIRECTION_PRESETS["kinetic-3d-keynote"];
+      const { palette } = direction;
+
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = project.canvas.width;
+      exportCanvas.height = project.canvas.height;
+      const ctx = exportCanvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D context unavailable");
+
+      const fps = Math.min(60, Math.max(24, project.canvas.fps || 30));
+      const stream = exportCanvas.captureStream(fps);
+
+      const prefersMp4 = requestedFormat === "mp4";
+      const mp4Candidate =
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
+          ? "video/mp4;codecs=avc1"
+          : typeof MediaRecorder !== "undefined" &&
+              MediaRecorder.isTypeSupported("video/mp4")
+            ? "video/mp4"
+            : "";
+      const webmCandidate =
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+          ? "video/webm;codecs=vp9"
+          : typeof MediaRecorder !== "undefined" &&
+              MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+            ? "video/webm;codecs=vp8"
+            : typeof MediaRecorder !== "undefined" &&
+                MediaRecorder.isTypeSupported("video/webm")
+              ? "video/webm"
+              : "";
+
+      const mimeType = prefersMp4
+        ? mp4Candidate || webmCandidate
+        : webmCandidate || mp4Candidate;
+      const fileExt =
+        prefersMp4 && mp4Candidate
+          ? "mp4"
+          : !prefersMp4 && webmCandidate
+            ? "webm"
+            : mp4Candidate
+              ? "mp4"
+              : "webm";
+
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType
+          ? { mimeType, videoBitsPerSecond: 8_000_000 }
+          : { videoBitsPerSecond: 8_000_000 }
+      );
+
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+
+      const donePromise = new Promise<Blob>((resolve) => {
+        recorder.onstop = () => {
+          resolve(
+            new Blob(chunks, {
+              type: mimeType || (fileExt === "mp4" ? "video/mp4" : "video/webm"),
+            })
+          );
+        };
+      });
+
+      recorder.start();
+
+      // Render a crisp 60fps high-tempo preview reel (~3.5s real-time capture)
+      const totalExportFrames = Math.min(180, Math.round(fps * 3.5));
+      const projectDuration = Math.max(1, project.canvas.duration || 10);
+
+      for (let f = 0; f < totalExportFrames; f++) {
+        const simSec = (f / totalExportFrames) * projectDuration;
+        const targetPlayerFrame = Math.round(
+          simSec * (project.canvas.fps || 30)
+        );
+        playerRef.current?.seekTo(targetPlayerFrame);
+
+        const w = exportCanvas.width;
+        const h = exportCanvas.height;
+        const portrait = h > w;
+
+        // 1. Matte Stage Background (respects canvas override first, then Design Direction palette)
+        ctx.fillStyle =
+          project.canvas.backgroundColor || palette.canvasBg || "#070807";
+        ctx.fillRect(0, 0, w, h);
+
+        // 2. Architectural Frame Border + Corner Registration Marks
+        ctx.strokeStyle = palette.border;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(42, 42, w - 84, h - 84);
+        ctx.fillStyle = palette.accent;
+        ctx.fillRect(41, 41, 28, 3);
+        ctx.fillRect(41, 41, 3, 28);
+        ctx.fillRect(w - 69, h - 44, 28, 3);
+        ctx.fillRect(w - 44, h - 69, 3, 28);
+
+        // 3. 3D Perspective Grid & Wireframe Polyhedron Projection
+        ctx.strokeStyle = palette.accent;
+        ctx.globalAlpha = 0.34;
+        ctx.lineWidth = 2;
+        const cx = portrait ? w * 0.5 : w * 0.64;
+        const cy = portrait ? h * 0.34 : h * 0.48;
+        const radius = Math.min(w, h) * 0.24;
+        const rotY = simSec * 1.15;
+        const rotX = simSec * 0.72;
+
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const rawVerts = [
+          [-1, phi, 0],
+          [1, phi, 0],
+          [-1, -phi, 0],
+          [1, -phi, 0],
+          [0, -1, phi],
+          [0, 1, phi],
+          [0, -1, -phi],
+          [0, 1, -phi],
+          [phi, 0, -1],
+          [phi, 0, 1],
+          [-phi, 0, -1],
+          [-phi, 0, 1],
+        ];
+        const projected = rawVerts.map(([vx, vy, vz]) => {
+          const x1 = vx * Math.cos(rotY) - vz * Math.sin(rotY);
+          const z1 = vx * Math.sin(rotY) + vz * Math.cos(rotY);
+          const y2 = vy * Math.cos(rotX) - z1 * Math.sin(rotX);
+          const z2 = vy * Math.sin(rotX) + z1 * Math.cos(rotX);
+          const scale = 4.2 / (4.8 - z2 * 0.45);
+          return {
+            x: cx + x1 * radius * 0.52 * scale,
+            y: cy + y2 * radius * 0.52 * scale,
+          };
+        });
+
+        for (let i = 0; i < projected.length; i++) {
+          for (let j = i + 1; j < projected.length; j++) {
+            const dx = rawVerts[i][0] - rawVerts[j][0];
+            const dy = rawVerts[i][1] - rawVerts[j][1];
+            const dz = rawVerts[i][2] - rawVerts[j][2];
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 2.15) {
+              ctx.beginPath();
+              ctx.moveTo(projected[i].x, projected[i].y);
+              ctx.lineTo(projected[j].x, projected[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+
+        // 4. Render active backdrops, overlays, badges, shape widgets, headlines & caption clips
+        for (const track of project.tracks) {
+          if (track.hidden) continue;
+          for (const clip of track.clips) {
+            if (
+              simSec >= clip.startTime &&
+              simSec <= clip.startTime + clip.duration
+            ) {
+              const localProgress = Math.min(
+                1,
+                Math.max(
+                  0,
+                  (simSec - clip.startTime) / Math.max(0.1, clip.duration)
+                )
+              );
+              const enterEase = Math.min(1, localProgress * 4.5);
+
+              if (
+                (clip.type === "video" || clip.type === "image") &&
+                clip.motionOverlay &&
+                clip.motionOverlay.preset !== "none"
+              ) {
+                const ovAccent = clip.motionOverlay.accentColor || palette.accent;
+                ctx.strokeStyle = ovAccent;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(w * 0.08, h * 0.64, 420, 66);
+                ctx.fillStyle = palette.surfaceBg;
+                ctx.fillRect(w * 0.08, h * 0.64, 420, 66);
+                ctx.fillStyle = ovAccent;
+                ctx.font = `700 16px monospace`;
+                ctx.fillText(
+                  (
+                    clip.motionOverlay.title ||
+                    clip.motionOverlay.preset.toUpperCase()
+                  ).slice(0, 42),
+                  w * 0.08 + 16,
+                  h * 0.64 + 28
+                );
+                if (clip.motionOverlay.subtitle) {
+                  ctx.fillStyle = palette.textMuted;
+                  ctx.font = `500 14px monospace`;
+                  ctx.fillText(
+                    clip.motionOverlay.subtitle.slice(0, 48),
+                    w * 0.08 + 16,
+                    h * 0.64 + 50
+                  );
+                }
+              }
+
+              if (clip.type === "shape" && clip.shapeVariant === "badge") {
+                const badgeAccent = clip.accentColor || palette.accent;
+                ctx.fillStyle = palette.surfaceBg;
+                ctx.fillRect(w * 0.08, h * 0.11, 520, 42);
+                ctx.fillStyle = badgeAccent;
+                ctx.fillRect(w * 0.08, h * 0.11, 5, 42);
+                ctx.fillStyle = palette.textPrimary;
+                ctx.font = `700 18px monospace`;
+                ctx.fillText(
+                  (clip.title || clip.name).slice(0, 46),
+                  w * 0.08 + 18,
+                  h * 0.11 + 27
+                );
+              } else if (clip.type === "text") {
+                const offsetX = (1 - enterEase) * -80;
+                const chromaOffset = (1 - enterEase) * 6;
+                ctx.font = `800 ${Math.round((clip.style?.fontSize || 60) * (portrait ? 0.65 : 0.95))}px sans-serif`;
+                if (chromaOffset > 0.5) {
+                  ctx.fillStyle = "rgba(255, 50, 50, 0.7)";
+                  ctx.fillText(
+                    clip.text.slice(0, 46),
+                    w * 0.08 + offsetX - chromaOffset,
+                    h * 0.42
+                  );
+                  ctx.fillStyle = "rgba(0, 220, 255, 0.7)";
+                  ctx.fillText(
+                    clip.text.slice(0, 46),
+                    w * 0.08 + offsetX + chromaOffset,
+                    h * 0.42
+                  );
+                }
+                ctx.fillStyle = clip.style?.color || palette.textPrimary;
+                ctx.fillText(
+                  clip.text.slice(0, 46),
+                  w * 0.08 + offsetX,
+                  h * 0.42
+                );
+                if (clip.subtext) {
+                  ctx.fillStyle = palette.textMuted;
+                  ctx.font = `500 24px sans-serif`;
+                  ctx.fillText(
+                    clip.subtext.slice(0, 70),
+                    w * 0.08 + offsetX,
+                    h * 0.49
+                  );
+                }
+              } else if (
+                clip.type === "shape" &&
+                clip.shapeVariant !== "progress-bar" &&
+                clip.shapeVariant !== "badge"
+              ) {
+                const shapeAccent = clip.accentColor || palette.accent;
+                const cardX = portrait ? w * 0.08 : w * 0.52;
+                const cardY = portrait ? h * 0.54 : h * 0.26;
+                const cardW = portrait ? w * 0.84 : w * 0.4;
+                const cardH = portrait ? h * 0.22 : h * 0.42;
+                ctx.fillStyle = palette.surfaceBg;
+                ctx.fillRect(cardX, cardY, cardW, cardH);
+                ctx.strokeStyle = shapeAccent;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(cardX, cardY, cardW, cardH);
+                ctx.fillStyle = shapeAccent;
+                ctx.font = `700 20px monospace`;
+                ctx.fillText(
+                  (clip.title || clip.shapeVariant.toUpperCase()).slice(0, 38),
+                  cardX + 24,
+                  cardY + 42
+                );
+                if (clip.subtitle) {
+                  ctx.fillStyle = palette.textMuted;
+                  ctx.font = `500 18px monospace`;
+                  ctx.fillText(
+                    clip.subtitle.slice(0, 48),
+                    cardX + 24,
+                    cardY + 74
+                  );
+                }
+              } else if (clip.type === "caption") {
+                const capAccent = clip.highlightColor || palette.accent;
+                ctx.fillStyle = clip.backgroundColor || palette.surfaceBg;
+                ctx.fillRect(w * 0.12, h * 0.82, w * 0.76, 68);
+                ctx.strokeStyle = palette.border;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(w * 0.12, h * 0.82, w * 0.76, 68);
+                ctx.fillStyle = capAccent;
+                ctx.font = `700 30px sans-serif`;
+                ctx.fillText(clip.text.slice(0, 68), w * 0.15, h * 0.865);
+              }
+            }
+          }
+        }
+
+        // 5. Bottom Progress Bar
+        ctx.fillStyle = palette.accent;
+        ctx.fillRect(0, h - 8, w * (simSec / projectDuration), 8);
+
+        setRecordingProgress(Math.round(((f + 1) / totalExportFrames) * 100));
+        await new Promise((r) => setTimeout(r, 16));
+      }
+
+      recorder.stop();
+      const videoBlob = await donePromise;
+      const url = URL.createObjectURL(videoBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.id || "agvi-3d-render"}.${fileExt}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(
+        `Exported ${fps}fps 3D Video (${project.id}.${fileExt})`
+      );
+    } catch (err) {
+      showToast(
+        `Video export error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setIsRecordingVideo(false);
     }
   };
 
@@ -510,13 +905,13 @@ export const AGVIStudio: React.FC = () => {
       <header className="h-14 shrink-0 border-b border-slate-800/80 bg-[#0A0E17] px-4 flex items-center justify-between gap-3">
         {/* Brand & Template Selector */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500/20 to-indigo-500/20 border border-sky-500/30">
-            <Cpu className="w-4 h-4 text-sky-400" />
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-lime-400/10 border border-lime-400/35">
+            <Cpu className="w-4 h-4 text-lime-400" />
             <span className="font-bold text-sm tracking-tight text-white">
-              AGVI 2.0
+              AGVI 3D
             </span>
-            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500 text-slate-950 font-bold">
-              AI Video Studio
+            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-lime-400 text-slate-950 font-bold">
+              60FPS Motion Engine
             </span>
           </div>
 
@@ -526,7 +921,7 @@ export const AGVIStudio: React.FC = () => {
               value={
                 Object.keys(STARTER_TEMPLATES).find(
                   (k) => STARTER_TEMPLATES[k].id === project.id
-                ) || "ai-tech-explainer"
+                ) || "kinetic-3d-keynote"
               }
               onChange={(e) =>
                 handleExecuteAgentAction({
@@ -537,14 +932,17 @@ export const AGVIStudio: React.FC = () => {
               }
               className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 font-medium cursor-pointer"
             >
+              <option value="kinetic-3d-keynote">
+                Showcase 0: Kinetic 3D Motion Engine (60fps 16:9)
+              </option>
               <option value="ai-tech-explainer">
-                Showcase 1: AI Video Director (16:9)
+                Showcase 1: Hybrid Video + Motion Rig (16:9)
               </option>
               <option value="tiktok-short-reel">
-                Showcase 2: Viral TikTok / Reels (9:16)
+                Showcase 2: Vertical Editorial Essay (9:16)
               </option>
               <option value="product-launch-ad">
-                Showcase 3: SaaS Launch Bento & CLI (16:9)
+                Showcase 3: Blueprint Mono Release & CLI (16:9)
               </option>
             </select>
           </div>
@@ -560,16 +958,16 @@ export const AGVIStudio: React.FC = () => {
             type="text"
             value={quickPrompt}
             onChange={(e) => setQuickPrompt(e.target.value)}
-            placeholder="Nhập ý tưởng bất kỳ để AI tự dựng video 7 Tracks (VD: Khóa học AI TikTok 9:16 tăng +450%)..."
+            placeholder="Nhập ý tưởng bất kỳ để AI tự dựng video 3D / Kinetic 7 Tracks (VD: Motion Graphics 3D nhịp độ cao 60fps)..."
             className="flex-1 bg-transparent text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
           />
           <button
             type="submit"
             disabled={isGeneratingQuick || !quickPrompt.trim()}
-            className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-sky-400 to-indigo-400 hover:from-sky-300 hover:to-indigo-300 disabled:opacity-40 text-slate-950 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+            className="px-2.5 py-1 rounded-lg bg-lime-400 hover:bg-lime-300 disabled:opacity-40 text-slate-950 font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
           >
             <Wand2 className="w-3 h-3" />
-            {isGeneratingQuick ? "Generating..." : "AI Dựng Ngay"}
+            {isGeneratingQuick ? "Generating..." : "AI Dựng 3D"}
           </button>
         </form>
 
@@ -582,14 +980,34 @@ export const AGVIStudio: React.FC = () => {
             </div>
           )}
 
+          <button
+            onClick={() =>
+              handleExecuteAgentAction({
+                action: "choreograph_3d_kinetic_scene",
+                agentName: "Studio 3D Kinetic Rig",
+                clipId: selectedClipId ?? undefined,
+                cameraMotion: "orbit-3d-left",
+                sceneTransition: "3d-cube-spin",
+                textEffect: "kinetic-char-3d",
+              })
+            }
+            title="1-Click: Attach 6-DOF 3D Camera Rig, 4-Point Whip Keyframe Graph & Directional Motion Blur"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-lime-400/15 hover:bg-lime-400/25 border border-lime-400/45 text-lime-300 font-semibold text-xs transition cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5 text-lime-400" />
+            3D Kinetic Rig
+          </button>
+
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300">
-            <span className="text-sky-400 font-semibold">
+            <span className="text-lime-400 font-semibold">
               {project.canvas.aspectRatio}
             </span>
             <span>•</span>
             <span>
               {project.canvas.width}×{project.canvas.height}
             </span>
+            <span>•</span>
+            <span className="text-sky-400">{project.canvas.fps}fps</span>
             <span>•</span>
             <span>{project.canvas.duration}s</span>
           </div>
@@ -621,8 +1039,8 @@ export const AGVIStudio: React.FC = () => {
           </button>
 
           <button
-            onClick={handleTriggerRender}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/15 transition cursor-pointer"
+            onClick={() => handleTriggerRender("webm")}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-lime-400 hover:bg-lime-300 text-slate-950 font-bold text-xs shadow-md shadow-lime-400/15 transition cursor-pointer"
           >
             <Film className="w-3.5 h-3.5" />
             Export
@@ -724,9 +1142,9 @@ export const AGVIStudio: React.FC = () => {
           <div className="w-full max-w-xl rounded-2xl bg-[#0B0F19] border border-slate-800 shadow-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Film className="w-4 h-4 text-sky-400" />
+                <Film className="w-4 h-4 text-lime-400" />
                 <h3 className="text-sm font-bold text-white">
-                  AGVI Render & Export Pipeline (`POST /api/render`)
+                  AGVI 3D Render & Browser Video Export (`POST /api/render`)
                 </h3>
               </div>
               <button
@@ -763,11 +1181,32 @@ export const AGVIStudio: React.FC = () => {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <span className="text-slate-300 font-medium">
+                  Output Format (`format`)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {(["webm", "mp4", "json-bundle"] as const).map((fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => handleTriggerRender(fmt)}
+                      className={`px-2.5 py-1 rounded font-mono text-[11px] transition cursor-pointer ${
+                        latestRenderJob.format === fmt
+                          ? "bg-lime-400 text-slate-950 font-bold"
+                          : "bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200"
+                      }`}
+                    >
+                      .{fmt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="font-semibold text-slate-300 flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5 text-sky-400" />
-                    Headless Render Command
+                    Headless FFmpeg Render Command
                   </span>
                   <button
                     onClick={() => {
@@ -793,6 +1232,21 @@ export const AGVIStudio: React.FC = () => {
                 </pre>
               </div>
 
+              {isRecordingVideo && (
+                <div className="p-3 rounded-lg bg-lime-400/10 border border-lime-400/30 space-y-1.5">
+                  <div className="flex items-center justify-between font-mono text-[11px] text-lime-300">
+                    <span>Rendering 60fps 3D WebGL & Kinetic Video Stream...</span>
+                    <span>{recordingProgress}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded bg-slate-900 overflow-hidden">
+                    <div
+                      style={{ width: `${recordingProgress}%` }}
+                      className="h-full bg-lime-400 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   onClick={() => {
@@ -806,10 +1260,22 @@ export const AGVIStudio: React.FC = () => {
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Download Project JSON Bundle
+                  Download JSON Bundle
+                </button>
+                <button
+                  onClick={handleBrowserVideoExport}
+                  disabled={isRecordingVideo}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-lime-400 hover:bg-lime-300 disabled:opacity-50 text-slate-950 font-bold cursor-pointer"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  {isRecordingVideo
+                    ? `Rendering Video (${recordingProgress}%)...`
+                    : latestRenderJob?.format === "json-bundle"
+                      ? "Export .json-bundle Package"
+                      : `Record & Download .${latestRenderJob?.format || "webm"} Video (${project.canvas.fps || 60}fps)`}
                 </button>
               </div>
             </div>

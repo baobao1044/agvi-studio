@@ -1,10 +1,15 @@
-import { NextRequest } from "next/server";
+import { NextRequest, connection } from "next/server";
 import {
   getAgentSchemaDocumentation,
   validateAndNormalizeProject,
 } from "@/lib/schema/timeline-schema";
 
 export async function GET() {
+  try {
+    await connection();
+  } catch {
+    // Allow direct in-process unit test invocation outside Next.js request store
+  }
   return Response.json({
     ok: true,
     documentation: getAgentSchemaDocumentation(),

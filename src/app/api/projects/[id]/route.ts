@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, connection } from "next/server";
 import {
   getProjectById,
   saveProject,
@@ -9,6 +9,11 @@ export async function GET(
   _request: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await connection();
+  } catch {
+    // Allow direct in-process unit test invocation outside Next.js request store
+  }
   const { id } = await ctx.params;
   const project = getProjectById(id);
   return Response.json({

@@ -9,6 +9,9 @@ import {
   CaptionPreset,
   ChartBarItem,
   ChatMessageItem,
+  ClipFilter,
+  ClipKeyframe,
+  KineticTextEffect,
   ProcessStepItem,
   SceneTransitionEffect,
   ShapeVariant,
@@ -67,17 +70,17 @@ function createInitialState(): StoreState {
     projects[tpl.id] = structuredClone(tpl);
   }
   return {
-    activeProjectId: "proj-ai-explainer",
+    activeProjectId: "proj-kinetic-3d",
     projects,
     actionLogs: [
       {
         id: "log-init-1",
         timestamp: new Date().toISOString(),
-        projectId: "proj-ai-explainer",
+        projectId: "proj-kinetic-3d",
         action: "system_init",
-        agentName: "AGVI Hybrid Video + Motion Engine",
+        agentName: "AGVI 3D + High-Tempo Motion Engine",
         summary:
-          "Initialized AGVI Studio (MIT Native Engine) with Hybrid Video Footage + Motion Graphics Compositing & Anti-Slop Gate.",
+          "Initialized AGVI Studio (MIT Native Engine) with 6-DOF 3D Stage, Multi-Keyframe Velocity Graph, Kinetic Typography & Hybrid Video Compositing.",
         status: "success",
       },
     ],
@@ -112,11 +115,14 @@ function loadStore(): StoreState {
             parsed.projects[key] = enforceAntiSlopOnProject(norm).project;
           }
         }
-        // Refresh starter templates so updated anti-slop templates are always current
+        // Refresh starter templates so updated 3D & anti-slop templates are always current
         for (const [, tpl] of Object.entries(STARTER_TEMPLATES)) {
-          if (!parsed.projects[tpl.id]) {
+          if (!parsed.projects[tpl.id] || tpl.id === "proj-kinetic-3d") {
             parsed.projects[tpl.id] = structuredClone(tpl);
           }
+        }
+        if (!parsed.activeProjectId || !parsed.projects[parsed.activeProjectId]) {
+          parsed.activeProjectId = "proj-kinetic-3d";
         }
         globalForStore.__agviStore = parsed;
         return parsed;
@@ -232,6 +238,9 @@ export interface StoryboardSceneInput {
   cameraMotion?: CameraMotionEffect;
   sceneTransition?: SceneTransitionEffect;
   motionOverlay?: VideoMotionOverlay;
+  textEffect?: KineticTextEffect;
+  keyframes?: ClipKeyframe[];
+  filter?: ClipFilter;
   widgetType?: ShapeVariant;
   metricValue?: string;
   metricTrend?: string;
@@ -255,6 +264,7 @@ export interface AgentActionPayload {
     | "generate_from_prompt"
     | "build_from_storyboard"
     | "enhance_video_with_motion"
+    | "choreograph_3d_kinetic_scene"
     | "set_design_direction"
     | "add_clip"
     | "update_clip"
@@ -274,11 +284,14 @@ export interface AgentActionPayload {
   title?: string;
   aspectRatio?: AspectRatio;
   scenes?: StoryboardSceneInput[];
-  // For enhance_video_with_motion (1-call hybrid video + motion graphics)
+  // For enhance_video_with_motion & choreograph_3d_kinetic_scene
   videoSrc?: string;
   cameraMotion?: CameraMotionEffect;
   sceneTransition?: SceneTransitionEffect;
   motionOverlay?: VideoMotionOverlay;
+  textEffect?: KineticTextEffect;
+  keyframes?: ClipKeyframe[];
+  filter?: ClipFilter;
   // For add_clip
   trackId?: string;
   trackType?: TrackType;
@@ -351,6 +364,185 @@ export function compilePromptToStoryboard(
     .split(/[,.;•\-\n]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 4);
+
+  const is3DKinetic = direction.id === "kinetic-3d-keynote";
+
+  if (is3DKinetic) {
+    return {
+      title: shortTopic,
+      aspectRatio: detectedRatio,
+      designDirection: direction.id,
+      scenes: [
+        {
+          duration: 3.5,
+          layoutPattern: "statement-only",
+          useVideoFootage: true,
+          videoUrl: "procedural-video://webgl-3d-prism",
+          cameraMotion: "hyper-push-in",
+          sceneTransition: "whip-blur-cut",
+          textEffect: "kinetic-char-3d",
+          filter: {
+            motionBlur: 0.7,
+            chromaticAberration: 0.45,
+            cameraShake: 0.35,
+          },
+          keyframes: [
+            {
+              offset: 0,
+              x: -26,
+              y: 8,
+              z: -240,
+              rotateX: 25,
+              rotateY: -28,
+              scale: 0.75,
+              opacity: 0,
+              easing: "whip",
+            },
+            {
+              offset: 0.25,
+              x: -4,
+              y: -4,
+              z: 65,
+              rotateX: 2,
+              rotateY: -5,
+              scale: 1.03,
+              opacity: 1,
+              easing: "expo-out",
+            },
+            {
+              offset: 1,
+              x: 4,
+              y: -4,
+              z: 30,
+              rotateX: 0,
+              rotateY: 6,
+              scale: 1,
+              opacity: 1,
+              easing: "ease-in-out",
+            },
+          ],
+          motionOverlay: {
+            preset: "3d-parallax-grid",
+            title: "6-DOF 3D STAGE // 60 FPS",
+            subtitle: "PERSPECTIVE 1400PX • VELOCITY GRAPH",
+          },
+          headline: shortTopic,
+          subheadline:
+            clauses[1] ||
+            (isVietnamese
+              ? "Tích hợp không gian 3D thực thụ, Camera 6 bậc tự do và đồ thị vận tốc Multi-Keyframe."
+              : "6-DOF 3D camera rig, WebGL wireframe geometry, and multi-keyframe velocity graphs."),
+          narration: isVietnamese
+            ? `Khởi tạo không gian 3D nhịp độ cao cho chủ đề ${clean.slice(0, 75)}`
+            : `High-tempo 3D motion stage for ${clean.slice(0, 75)}`,
+          lowerThirdTitle: "01 / 60FPS 3D STAGE & VELOCITY GRAPH",
+        },
+        {
+          duration: 3.5,
+          layoutPattern: "asymmetric-split",
+          useVideoFootage: true,
+          videoUrl: "procedural-video://webgl-3d-prism",
+          cameraMotion: "orbit-3d-left",
+          sceneTransition: "3d-cube-spin",
+          textEffect: "kinetic-word-stomp",
+          filter: {
+            motionBlur: 0.65,
+            chromaticAberration: 0.35,
+            cameraShake: 0.25,
+          },
+          motionOverlay: {
+            preset: "hud-telemetry",
+            title: "MULTI-KEYFRAME CURVES",
+            subtitle: "WHIP • EXPO-OUT • ELASTIC • BOUNCE",
+          },
+          headline: isVietnamese
+            ? "Đồ Thị Vận Tốc & 3D Carousel"
+            : "Multi-Keyframe Velocity & 3D Stack",
+          subheadline: isVietnamese
+            ? "Nội suy mượt mà tọa độ X/Y/Z và góc xoay 3 chiều theo đường cong gia tốc After Effects."
+            : "Interpolate X/Y/Z depth and 3D rotation with non-linear whip and exponential curves.",
+          narration: isVietnamese
+            ? "Mỗi lớp đồ họa được điều khiển bởi đường cong vận tốc phi tuyến tính và xoay 3 chiều"
+            : "Every layer is driven by non-linear velocity curves and 3D perspective depth",
+          widgetType: "3d-carousel-stack",
+          bentoItems: [
+            {
+              title: clauses[0]?.slice(0, 28) || "6-DOF Camera Rig",
+              subtitle: "Orbit Left/Right, Fly-Through Z, Whip-Pan 3D & Hyper Push-In.",
+              metric: "3D RIG",
+            },
+            {
+              title: "Velocity Graph Editor",
+              subtitle: "Whip, Expo-Out, Back-Out, Elastic & Bounce easing curves.",
+              metric: "CURVES",
+            },
+            {
+              title: "Directional Motion Blur",
+              subtitle: "Velocity-driven blur, RGB chromatic shift & impact shake.",
+              metric: "POST-FX",
+            },
+          ],
+          lowerThirdTitle: "02 / 3D CAROUSEL & VELOCITY CURVES",
+        },
+        {
+          duration: 3.5,
+          layoutPattern: "artifact-focus",
+          useVideoFootage: true,
+          videoUrl: "procedural-video://webgl-3d-tunnel",
+          cameraMotion: "fly-through-z",
+          sceneTransition: "zoom-punch",
+          filter: {
+            motionBlur: 0.8,
+            chromaticAberration: 0.5,
+            cameraShake: 0.4,
+          },
+          motionOverlay: {
+            preset: "3d-parallax-grid",
+            title: "Z-AXIS FLY-THROUGH",
+            subtitle: "KINETIC STOMP WALL • 60 FPS",
+          },
+          headline: shortTopic.toUpperCase(),
+          narration: isVietnamese
+            ? "Chuyển cảnh xuyên tâm trục Z kết hợp tường chữ Kinetic 3D và hiệu ứng rung chấn camera"
+            : "Z-axis camera fly-through paired with a 3D kinetic stomp wall and impact shake",
+          widgetType: "kinetic-impact-wall",
+          lowerThirdTitle: "03 / KINETIC IMPACT WALL",
+        },
+        {
+          duration: 3.5,
+          layoutPattern: "asymmetric-split",
+          useVideoFootage: true,
+          videoUrl: "procedural-video://webgl-3d-prism",
+          cameraMotion: "whip-pan-3d",
+          sceneTransition: "glitch-slice",
+          textEffect: "split-mask-reveal",
+          filter: {
+            motionBlur: 0.6,
+            chromaticAberration: 0.35,
+          },
+          motionOverlay: {
+            preset: "spotlight-pointer",
+            title: "3D WIREFRAME PRISM",
+            subtitle: "1-Call API: choreograph_3d_kinetic_scene",
+            targetX: 18,
+            targetY: -4,
+          },
+          headline: isVietnamese
+            ? "Điều Khiển Cảnh 3D Bằng 1 Lệnh API"
+            : "1-Call 3D Choreography API",
+          subheadline: isVietnamese
+            ? "Gọi choreograph_3d_kinetic_scene và xuất trực tiếp file video .webm / .mp4 ngay trên trình duyệt."
+            : "Trigger choreograph_3d_kinetic_scene and export .webm / .mp4 video directly in the browser.",
+          narration: isVietnamese
+            ? "Toàn bộ hệ thống tọa độ 3D đồ thị vận tốc và kết xuất video đều hoạt động trực tiếp"
+            : "Full 3D spatial coordinates velocity graphs and native browser video export ready out of the box",
+          widgetType: "3d-wireframe-prism",
+          metricValue: verifiedFacts[0]?.value || "60 FPS",
+          lowerThirdTitle: "04 / 3D WIREFRAME PRISM & EXPORT",
+        },
+      ],
+    };
+  }
 
   if (isVietnamese) {
     return {
@@ -631,11 +823,203 @@ export function executeAgentAction(payload: AgentActionPayload) {
     switch (act.action) {
       case "set_design_direction": {
         const dir = resolveDesignDirection(act.designDirection, proj.name);
+        proj.canvas.backgroundColor = dir.palette.canvasBg;
         proj.agentMeta = {
           ...(proj.agentMeta || {}),
           designDirection: dir.id,
         };
         summaryMessages.push(`Set Art Direction to "${dir.name}"`);
+        return proj;
+      }
+
+      case "choreograph_3d_kinetic_scene": {
+        // 1-Call High-Tempo 3D & Kinetic Choreography Macro:
+        // Upgrades the active scene with 6-DOF 3D WebGL stage, 3D Camera Rig,
+        // Multi-Keyframe Velocity Graph, 3D Kinetic Typography, Motion Blur & Chromatic Aberration.
+        const dir = resolveDesignDirection(
+          act.designDirection || "kinetic-3d-keynote",
+          proj.name
+        );
+        proj.agentMeta = {
+          ...(proj.agentMeta || {}),
+          designDirection: dir.id,
+        };
+        proj.canvas.fps = 60;
+
+        const cameraMotion: CameraMotionEffect =
+          act.cameraMotion || "orbit-3d-left";
+        const sceneTransition: SceneTransitionEffect =
+          act.sceneTransition || "3d-cube-spin";
+        const textEffect: KineticTextEffect =
+          act.textEffect || "kinetic-char-3d";
+        const motionOverlay: VideoMotionOverlay = act.motionOverlay || {
+          preset: "3d-parallax-grid",
+          title: "6-DOF 3D KINETIC STAGE // 60 FPS",
+          subtitle: "PERSPECTIVE 1400PX • VELOCITY GRAPH",
+          accentColor: dir.palette.accent,
+        };
+        const defaultKeyframes: ClipKeyframe[] = act.keyframes || [
+          {
+            offset: 0,
+            x: -28,
+            y: 10,
+            z: -260,
+            rotateX: 28,
+            rotateY: -34,
+            scale: 0.72,
+            opacity: 0,
+            easing: "whip",
+          },
+          {
+            offset: 0.24,
+            x: -4,
+            y: -4,
+            z: 75,
+            rotateX: 2,
+            rotateY: -6,
+            scale: 1.04,
+            opacity: 1,
+            easing: "expo-out",
+          },
+          {
+            offset: 0.85,
+            x: -3,
+            y: -4,
+            z: 40,
+            rotateX: 0,
+            rotateY: 4,
+            scale: 1,
+            opacity: 1,
+            easing: "ease-in-out",
+          },
+          {
+            offset: 1,
+            x: 16,
+            y: -4,
+            z: 220,
+            rotateX: -12,
+            rotateY: 22,
+            scale: 1.15,
+            opacity: 0,
+            easing: "expo-in",
+          },
+        ];
+
+        // 1. Upgrade background track clip to 3D WebGL stage + 6-DOF Camera Rig
+        const bgTrack = proj.tracks.find(
+          (t) => t.type === "video" || t.type === "image"
+        );
+        if (bgTrack && bgTrack.clips.length > 0) {
+          bgTrack.type = "video";
+          bgTrack.name = "1. 3D WebGL Stage & 6-DOF Camera Rig";
+          const firstBg = bgTrack.clips[0];
+          bgTrack.clips[0] = {
+            ...firstBg,
+            type: "video",
+            name: "3D WebGL Stage + 6-DOF Camera Rig",
+            src: act.videoSrc || "procedural-video://webgl-3d-prism",
+            volume: 0,
+            playbackRate: 1,
+            trimStart: 0,
+            cameraMotion,
+            sceneTransition,
+            motionOverlay: {
+              ...motionOverlay,
+              accentColor: motionOverlay.accentColor || dir.palette.accent,
+            },
+          };
+        }
+
+        // 2. Upgrade primary headline clip with 3D Keyframe Velocity Graph + Kinetic Text + Motion Blur
+        const textTrack = proj.tracks.find((t) => t.type === "text");
+        if (textTrack && textTrack.clips.length > 0) {
+          const targetText =
+            (act.clipId &&
+              textTrack.clips.find((c) => c.id === act.clipId)) ||
+            textTrack.clips[0];
+          if (targetText && targetText.type === "text") {
+            const tIdx = textTrack.clips.indexOf(targetText);
+            textTrack.clips[tIdx] = {
+              ...targetText,
+              textEffect,
+              sceneTransition,
+              filter: act.filter || {
+                motionBlur: 0.75,
+                chromaticAberration: 0.45,
+                cameraShake: 0.35,
+              },
+              transform: {
+                ...targetText.transform,
+                z: 60,
+                rotateX: 4,
+                rotateY: -8,
+              },
+              keyframes: defaultKeyframes,
+              enterAnimation: { type: "3d-flip-x", duration: 0.35 },
+            };
+          }
+        }
+
+        // 3. Upgrade first shape widget (or explicitly targeted shape clip) to 3D Carousel Stack or 3D Wireframe Prism
+        const widgetTrack = proj.tracks.find(
+          (t) => t.type === "shape" && t.id !== "track-hud" && t.id !== "track-callouts"
+        );
+        if (widgetTrack && widgetTrack.clips.length > 0) {
+          const wClip =
+            (act.clipId && widgetTrack.clips.find((c) => c.id === act.clipId)) ||
+            widgetTrack.clips[0];
+          if (wClip && wClip.type === "shape") {
+            const wIdx = widgetTrack.clips.indexOf(wClip);
+            widgetTrack.clips[wIdx] = {
+              ...wClip,
+              shapeVariant: "3d-carousel-stack",
+              sceneTransition,
+              filter: act.filter || {
+                motionBlur: 0.55,
+                chromaticAberration: 0.3,
+              },
+              transform: {
+                ...wClip.transform,
+                z: 35,
+                rotateX: 4,
+                rotateY: -12,
+              },
+              ...(act.keyframes ? { keyframes: defaultKeyframes } : {}),
+              enterAnimation: { type: "3d-flip-y", duration: 0.38 },
+            };
+          }
+        }
+
+        // 4. If a specific clipId was passed on any track, ensure it receives the keyframes and 3D transform
+        if (act.clipId) {
+          for (const trk of proj.tracks) {
+            const cIdx = trk.clips.findIndex((c) => c.id === act.clipId);
+            if (cIdx !== -1) {
+              const target = trk.clips[cIdx];
+              trk.clips[cIdx] = {
+                ...target,
+                sceneTransition,
+                filter: act.filter || {
+                  ...(target.filter || {}),
+                  motionBlur: 0.75,
+                  chromaticAberration: 0.45,
+                  cameraShake: 0.35,
+                },
+                transform: {
+                  ...target.transform,
+                  z: target.transform.z ?? 60,
+                  rotateX: target.transform.rotateX ?? 4,
+                  rotateY: target.transform.rotateY ?? -8,
+                },
+                keyframes: defaultKeyframes,
+              };
+            }
+          }
+        }
+
+        summaryMessages.push(
+          `Choreographed 60fps 3D Kinetic Scene: Camera (${cameraMotion}), Transition (${sceneTransition}), Text (${textEffect}), 4-Point Whip Keyframe Graph & Directional Motion Blur`
+        );
         return proj;
       }
 
@@ -1084,6 +1468,10 @@ export function executeAgentAction(payload: AgentActionPayload) {
         );
         const { palette, radiusPx } = direction;
         const isPortrait = proj.canvas.aspectRatio === "9:16";
+        const isKinetic3D = direction.id === "kinetic-3d-keynote";
+        if (isKinetic3D) {
+          proj.canvas.fps = 60;
+        }
 
         const bgClips: TimelineClip[] = [];
         const widgetClips: TimelineClip[] = [];
@@ -1098,12 +1486,19 @@ export function executeAgentAction(payload: AgentActionPayload) {
           "artifact-focus",
           "asymmetric-split",
         ];
-        const defaultWidgetCycle: ShapeVariant[] = [
-          "process-stepper",
-          "split-comparison",
-          "code-card",
-          "bento-grid",
-        ];
+        const defaultWidgetCycle: ShapeVariant[] = isKinetic3D
+          ? [
+              "3d-carousel-stack",
+              "3d-carousel-stack",
+              "kinetic-impact-wall",
+              "3d-wireframe-prism",
+            ]
+          : [
+              "process-stepper",
+              "split-comparison",
+              "code-card",
+              "bento-grid",
+            ];
 
         scenes.forEach((scene, idx) => {
           const dur =
@@ -1197,10 +1592,16 @@ export function executeAgentAction(payload: AgentActionPayload) {
             transform: {
               x: isPortrait ? 0 : pattern === "artifact-focus" ? 0 : -24,
               y: isPortrait ? -39 : -36,
+              z: isKinetic3D ? 40 : 0,
+              rotateX: 0,
+              rotateY: isKinetic3D ? 8 : 0,
               scale: 1,
               rotation: 0,
             },
-            enterAnimation: { type: "fade", duration: 0.25 },
+            enterAnimation: {
+              type: isKinetic3D ? "whip-left" : "fade",
+              duration: 0.25,
+            },
             exitAnimation: { type: "fade", duration: 0.2 },
           });
 
@@ -1220,8 +1621,16 @@ export function executeAgentAction(payload: AgentActionPayload) {
               subtext: scene.subheadline
                 ? cleanCopywritingText(scene.subheadline)
                 : undefined,
-              textEffect: "none",
+              textEffect:
+                scene.textEffect ||
+                (isKinetic3D
+                  ? isStatementOnly
+                    ? "kinetic-char-3d"
+                    : "kinetic-word-stomp"
+                  : "none"),
               sceneTransition: scene.sceneTransition || "none",
+              filter: scene.filter,
+              keyframes: scene.keyframes,
               style: {
                 fontSize: isPortrait
                   ? isStatementOnly
@@ -1230,7 +1639,7 @@ export function executeAgentAction(payload: AgentActionPayload) {
                   : isStatementOnly
                     ? 70
                     : 52,
-                fontWeight: "700",
+                fontWeight: isKinetic3D ? "800" : "700",
                 color: palette.textPrimary,
                 textAlign: "left",
                 borderRadius: radiusPx,
@@ -1244,13 +1653,22 @@ export function executeAgentAction(payload: AgentActionPayload) {
                   : isStatementOnly
                     ? -4
                     : -4,
+                z: isKinetic3D ? (isStatementOnly ? 60 : 45) : 0,
+                rotateX: isKinetic3D && isStatementOnly ? 4 : 0,
+                rotateY: isKinetic3D ? (isSplit ? 10 : -6) : 0,
                 scale: 1,
                 rotation: 0,
                 width: isPortrait ? 88 : isSplit ? 38 : 82,
               },
               enterAnimation: {
-                type: isSplit ? "slide-left" : "slide-up",
-                duration: 0.3,
+                type: isKinetic3D
+                  ? isStatementOnly
+                    ? "3d-flip-x"
+                    : "whip-left"
+                  : isSplit
+                    ? "slide-left"
+                    : "slide-up",
+                duration: 0.32,
               },
               exitAnimation: { type: "fade", duration: 0.2 },
             });
@@ -1279,15 +1697,16 @@ export function executeAgentAction(payload: AgentActionPayload) {
               strokeWidth: 1,
               borderRadius: radiusPx,
               sceneTransition: scene.sceneTransition || "none",
+              filter: scene.filter,
               title:
-                scene.lowerThirdTitle ||
                 scene.headline ||
+                scene.lowerThirdTitle ||
                 `0${idx + 1} Specification`,
               subtitle: scene.lowerThirdSubtitle || direction.name,
               codeSnippet: scene.codeSnippet,
               codeLanguage: "json",
               accentColor: palette.accent,
-              metricValue: scene.metricValue || "30 FPS",
+              metricValue: scene.metricValue || (isKinetic3D ? "60 FPS" : "30 FPS"),
               metricTrend: scene.metricTrend || "Deterministic Frame Sync",
               chartData: scene.chartData,
               chatMessages: scene.chatMessages,
@@ -1302,13 +1721,22 @@ export function executeAgentAction(payload: AgentActionPayload) {
               transform: {
                 x: isPortrait ? 0 : isSplit ? 19 : 0,
                 y: isPortrait ? 2 : -2,
+                z: isKinetic3D ? 35 : 0,
+                rotateX: isKinetic3D ? 4 : 0,
+                rotateY: isKinetic3D ? (isSplit ? -10 : 0) : 0,
                 scale: 1,
                 rotation: 0,
                 width: isPortrait ? 88 : isSplit ? 46 : 74,
               },
               enterAnimation: {
-                type: isSplit ? "slide-right" : "slide-up",
-                duration: 0.3,
+                type: isKinetic3D
+                  ? isSplit
+                    ? "3d-flip-y"
+                    : "kinetic-slam"
+                  : isSplit
+                    ? "slide-right"
+                    : "slide-up",
+                duration: 0.35,
               },
               exitAnimation: { type: "fade", duration: 0.2 },
             });

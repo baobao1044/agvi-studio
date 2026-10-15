@@ -10,6 +10,7 @@ import type { AGVIProject, TimelineClip, TimelineTrack } from "../schema/timelin
 
 export type DesignDirectionId =
   | "swiss-industrial"
+  | "kinetic-3d-keynote"
   | "warm-editorial"
   | "documentary-slate"
   | "cobalt-technical";
@@ -45,9 +46,9 @@ export const DESIGN_DIRECTION_PRESETS: Record<DesignDirectionId, DesignDirection
     id: "swiss-industrial",
     name: "Swiss Industrial (Dark Matte + Signal Orange)",
     tagline: "High-contrast carbon matte surface, structural 1px hairlines, and a single signal-orange focal accent.",
-    energy: 6,
-    rhythm: 8,
-    motion: 4,
+    energy: 8,
+    rhythm: 9,
+    motion: 8,
     palette: {
       canvasBg: "#0D0D0C",
       surfaceBg: "#161614",
@@ -66,13 +67,38 @@ export const DESIGN_DIRECTION_PRESETS: Record<DesignDirectionId, DesignDirection
     },
     radiusPx: 6,
   },
+  "kinetic-3d-keynote": {
+    id: "kinetic-3d-keynote",
+    name: "Kinetic 3D Keynote (Obsidian Stage + Volt Lime)",
+    tagline: "High-tempo 3D camera fly-throughs, whip-pan motion blur, and per-character 3D kinetic typography.",
+    energy: 10,
+    rhythm: 10,
+    motion: 10,
+    palette: {
+      canvasBg: "#070807",
+      surfaceBg: "#111311",
+      surfaceAltBg: "#191C19",
+      border: "#282E28",
+      textPrimary: "#F4F7F4",
+      textMuted: "#8F9A8F",
+      accent: "#CCFF00",
+      accentContrast: "#070807",
+    },
+    typography: {
+      displayFont: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+      bodyFont: "'Inter', system-ui, sans-serif",
+      monoFont: "'JetBrains Mono', 'Fira Code', monospace",
+      headlineTracking: "-0.04em",
+    },
+    radiusPx: 6,
+  },
   "warm-editorial": {
     id: "warm-editorial",
     name: "Warm Editorial (Paper Ink + Vermilion)",
     tagline: "Warm charcoal & stone surfaces inspired by print monographs, paired with crisp vermilion accents.",
-    energy: 4,
-    rhythm: 7,
-    motion: 3,
+    energy: 6,
+    rhythm: 8,
+    motion: 6,
     palette: {
       canvasBg: "#141311",
       surfaceBg: "#1D1B18",
@@ -95,9 +121,9 @@ export const DESIGN_DIRECTION_PRESETS: Record<DesignDirectionId, DesignDirection
     id: "documentary-slate",
     name: "Documentary Field (Deep Slate + Ochre)",
     tagline: "Grounded graphite surfaces with warm ochre data markers for technical explainers and essays.",
-    energy: 5,
-    rhythm: 7,
-    motion: 4,
+    energy: 7,
+    rhythm: 8,
+    motion: 7,
     palette: {
       canvasBg: "#0F1210",
       surfaceBg: "#171C19",
@@ -120,9 +146,9 @@ export const DESIGN_DIRECTION_PRESETS: Record<DesignDirectionId, DesignDirection
     id: "cobalt-technical",
     name: "Blueprint Mono (Obsidian + International Klein Blue)",
     tagline: "Restrained engineering slate with sharp 4px corners and a single high-visibility cobalt indicator.",
-    energy: 6,
+    energy: 8,
     rhythm: 8,
-    motion: 4,
+    motion: 8,
     palette: {
       canvasBg: "#0A0C10",
       surfaceBg: "#12161F",
@@ -316,6 +342,18 @@ export function resolveDesignDirection(
     return DESIGN_DIRECTION_PRESETS[directionHint as DesignDirectionId];
   }
   const lower = `${directionHint ?? ""} ${textContext ?? ""}`.toLowerCase();
+  if (
+    lower.includes("3d") ||
+    lower.includes("kinetic") ||
+    lower.includes("after effect") ||
+    lower.includes("nhịp độ cao") ||
+    lower.includes("high-tempo") ||
+    lower.includes("whip") ||
+    lower.includes("keynote") ||
+    lower.includes("webgl")
+  ) {
+    return DESIGN_DIRECTION_PRESETS["kinetic-3d-keynote"];
+  }
   if (lower.includes("editorial") || lower.includes("story") || lower.includes("essay") || lower.includes("báo chí")) {
     return DESIGN_DIRECTION_PRESETS["warm-editorial"];
   }
@@ -333,7 +371,7 @@ export function resolveDesignDirection(
  * - R-01: Replaces generic blue-purple/cyan-purple gradients & cyber-grid backdrops with matte architectural surfaces
  * - R-07: Removes unmotivated background cyber grids
  * - R-11: Replaces 999px pill border-radius on content cards with crisp 4px-6px editorial radius
- * - R-13: Eliminates stacked neon glows
+ * - R-13: Eliminates stacked neon glows (while preserving intentional high-tempo kinetic effects: kinetic-char-3d, kinetic-word-stomp, split-mask-reveal, glitch-decode)
  * - R-16 / R-36: Strips AI slop buzzwords
  * - R-17: Replaces fabricated "+420% / +380% / 10.4x" dummy metrics unless verified in source prompt
  * - R-29: Enforces a disciplined 2-neutral + 1-accent color system across all tracks
@@ -353,22 +391,39 @@ export function enforceAntiSlopOnProject(
   const { palette, typography, radiusPx } = direction;
   const verifiedFacts = extractVerifiedFactsFromPrompt(options?.sourcePrompt ?? "");
 
+  const isExplicitDirectionChange = Boolean(options?.directionId);
+  const KNOWN_PRESET_CANVAS_BGS = new Set(
+    Object.values(DESIGN_DIRECTION_PRESETS).map((p) => p.palette.canvasBg.toLowerCase())
+  );
+  const KNOWN_PRESET_ACCENTS = new Set(
+    Object.values(DESIGN_DIRECTION_PRESETS).map((p) => p.palette.accent.toLowerCase())
+  );
+
   // 1. Canvas Background Gate (R-01, R-29)
   let canvasBg = project.canvas.backgroundColor || palette.canvasBg;
   if (
+    isExplicitDirectionChange ||
+    KNOWN_PRESET_CANVAS_BGS.has(canvasBg.toLowerCase()) ||
     canvasBg === "#090D16" ||
     canvasBg === "#050811" ||
     canvasBg === "#04060E" ||
     isSlopColor(canvasBg)
   ) {
-    violations.push({
-      ruleId: "R-01",
-      category: "visual",
-      severity: "high",
-      description: "Replaced generic dark-blue AI slop canvas background with intentional matte surface tone.",
-      before: canvasBg,
-      after: palette.canvasBg,
-    });
+    if (
+      canvasBg === "#090D16" ||
+      canvasBg === "#050811" ||
+      canvasBg === "#04060E" ||
+      isSlopColor(canvasBg)
+    ) {
+      violations.push({
+        ruleId: "R-01",
+        category: "visual",
+        severity: "high",
+        description: "Replaced generic dark-blue AI slop canvas background with intentional matte surface tone.",
+        before: canvasBg,
+        after: palette.canvasBg,
+      });
+    }
     canvasBg = palette.canvasBg;
   }
 
@@ -388,18 +443,20 @@ export function enforceAntiSlopOnProject(
         if (nextClip.subtext) {
           nextClip.subtext = cleanCopywritingText(nextClip.subtext, violations, nextClip.id);
         }
-        // R-01 / R-13: Remove neon-glow & cyan-purple gradient text effects
+        // R-01 / R-13: Remove neon-glow & cyan-purple gradient text effects (preserve kinetic-char-3d, kinetic-word-stomp, split-mask-reveal, glitch-decode, typewriter)
         if (nextClip.textEffect === "neon-glow" || nextClip.textEffect === "gradient") {
+          const replacementEffect =
+            direction.id === "kinetic-3d-keynote" ? "kinetic-char-3d" : "none";
           violations.push({
             ruleId: "R-13",
             category: "visual",
             severity: "high",
-            description: `Removed "${nextClip.textEffect}" text effect in favor of clean high-contrast typography.`,
+            description: `Replaced "${nextClip.textEffect}" text effect with "${replacementEffect}" typography.`,
             targetClipId: nextClip.id,
             before: nextClip.textEffect,
-            after: "none",
+            after: replacementEffect,
           });
-          nextClip.textEffect = "none";
+          nextClip.textEffect = replacementEffect;
         }
 
         const style = { ...nextClip.style };
@@ -413,6 +470,8 @@ export function enforceAntiSlopOnProject(
             before: style.color,
             after: palette.textPrimary,
           });
+          style.color = palette.textPrimary;
+        } else if (isExplicitDirectionChange) {
           style.color = palette.textPrimary;
         }
         if (style.backgroundColor && isSlopColor(style.backgroundColor)) {
@@ -451,7 +510,12 @@ export function enforceAntiSlopOnProject(
           });
           nextClip.preset = "minimal-box";
         }
-        if (isSlopColor(nextClip.highlightColor)) {
+        if (
+          isExplicitDirectionChange ||
+          !nextClip.highlightColor ||
+          KNOWN_PRESET_ACCENTS.has(nextClip.highlightColor.toLowerCase()) ||
+          isSlopColor(nextClip.highlightColor)
+        ) {
           nextClip.highlightColor = palette.accent;
         }
         nextClip.textColor = palette.textPrimary;
@@ -475,8 +539,27 @@ export function enforceAntiSlopOnProject(
             after: `procedural://${direction.id}`,
           });
           nextClip.src = `procedural://${direction.id}`;
+        } else if (
+          isExplicitDirectionChange &&
+          nextClip.src.startsWith("procedural://")
+        ) {
+          nextClip.src = `procedural://${direction.id}`;
         }
         nextClip.overlayColor = palette.canvasBg;
+        if (nextClip.motionOverlay) {
+          nextClip.motionOverlay = {
+            ...nextClip.motionOverlay,
+            accentColor: palette.accent,
+          };
+        }
+      }
+
+      // Synchronize Video Motion Overlay Accent Color
+      if (nextClip.type === "video" && nextClip.motionOverlay) {
+        nextClip.motionOverlay = {
+          ...nextClip.motionOverlay,
+          accentColor: palette.accent,
+        };
       }
 
       // Sanitize Shape & Motion Widget Clips (R-01, R-11, R-17, R-29)
@@ -516,13 +599,19 @@ export function enforceAntiSlopOnProject(
           });
         }
 
-        if (isSlopColor(nextClip.accentColor)) {
+        if (
+          isExplicitDirectionChange ||
+          !nextClip.accentColor ||
+          KNOWN_PRESET_ACCENTS.has(nextClip.accentColor.toLowerCase()) ||
+          isSlopColor(nextClip.accentColor)
+        ) {
           nextClip.accentColor = palette.accent;
         }
-        if (isSlopColor(nextClip.stroke)) {
+        if (isExplicitDirectionChange || !nextClip.stroke || isSlopColor(nextClip.stroke)) {
           nextClip.stroke = palette.border;
         }
-        nextClip.fill = palette.surfaceBg;
+        nextClip.fill =
+          nextClip.shapeVariant === "progress-bar" ? palette.accent : palette.surfaceBg;
         nextClip.secondaryFill = palette.surfaceAltBg;
         if ((nextClip.borderRadius ?? 0) > 12) {
           nextClip.borderRadius = radiusPx;

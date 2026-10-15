@@ -4,6 +4,10 @@ import React, { useEffect, useRef } from "react";
 import {
   AbsoluteFill,
   Sequence,
+  computeCameraShake,
+  computeMotionVelocity,
+  evaluateClipKeyframes,
+  evaluateEasing,
   interpolate,
   spring,
   useCurrentFrame,
@@ -36,7 +40,8 @@ export interface AGVICompositionProps {
 }
 
 /**
- * Restrained, functional motion curves (anti-slop-ui Rule: Max 1-2 animated properties simultaneously).
+ * High-tempo & editorial motion curves supporting both restrained transitions and
+ * After Effects-style 3D / whip / slam kinetic choreography.
  */
 function computeAnimationStyles(
   localFrame: number,
@@ -48,12 +53,20 @@ function computeAnimationStyles(
   opacityMultiplier: number;
   translateX: number;
   translateY: number;
+  translateZ: number;
+  rotateX: number;
+  rotateY: number;
+  rotateZ: number;
   scaleMultiplier: number;
   blurPx: number;
 } {
   let opacityMultiplier = 1;
   let translateX = 0;
   let translateY = 0;
+  let translateZ = 0;
+  let rotateX = 0;
+  let rotateY = 0;
+  let rotateZ = 0;
   let scaleMultiplier = 1;
   let blurPx = 0;
 
@@ -61,52 +74,114 @@ function computeAnimationStyles(
   const exitFrames = Math.max(1, Math.round((exit?.duration || 0.25) * fps));
 
   if (enter && enter.type !== "none" && localFrame <= enterFrames) {
-    const progress = interpolate(localFrame, [0, enterFrames], [0, 1], {
+    const rawProgress = interpolate(localFrame, [0, enterFrames], [0, 1], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     });
+    const easedProgress = evaluateEasing(enter.easing || "expo-out", rawProgress);
     const springVal = spring({
       frame: localFrame,
       fps,
-      config: { damping: 22, stiffness: 160, mass: 0.9 },
+      config: { damping: 20, stiffness: 170, mass: 0.85 },
+    });
+    const stompSpring = spring({
+      frame: localFrame,
+      fps,
+      config: { damping: 11, stiffness: 240, mass: 0.7 },
     });
 
     switch (enter.type) {
       case "fade":
-        opacityMultiplier *= progress;
+        opacityMultiplier *= rawProgress;
         break;
       case "slide-up":
-        opacityMultiplier *= progress;
-        translateY += interpolate(springVal, [0, 1], [32, 0]);
+        opacityMultiplier *= rawProgress;
+        translateY += interpolate(springVal, [0, 1], [36, 0]);
         break;
       case "slide-down":
-        opacityMultiplier *= progress;
-        translateY += interpolate(springVal, [0, 1], [-32, 0]);
+        opacityMultiplier *= rawProgress;
+        translateY += interpolate(springVal, [0, 1], [-36, 0]);
         break;
       case "slide-left":
-        opacityMultiplier *= progress;
-        translateX += interpolate(springVal, [0, 1], [-48, 0]);
+        opacityMultiplier *= rawProgress;
+        translateX += interpolate(springVal, [0, 1], [-52, 0]);
         break;
       case "slide-right":
-        opacityMultiplier *= progress;
-        translateX += interpolate(springVal, [0, 1], [48, 0]);
+        opacityMultiplier *= rawProgress;
+        translateX += interpolate(springVal, [0, 1], [52, 0]);
         break;
       case "zoom-in":
-        opacityMultiplier *= progress;
-        scaleMultiplier *= interpolate(springVal, [0, 1], [0.94, 1]);
-        break;
-      case "zoom-out":
-        opacityMultiplier *= progress;
-        scaleMultiplier *= interpolate(springVal, [0, 1], [1.06, 1]);
-        break;
-      case "pop-spring":
-        opacityMultiplier *= Math.min(1, progress * 1.4);
+        opacityMultiplier *= rawProgress;
         scaleMultiplier *= interpolate(springVal, [0, 1], [0.92, 1]);
         break;
-      case "blur-in":
-        opacityMultiplier *= progress;
-        blurPx += interpolate(progress, [0, 1], [8, 0]);
+      case "zoom-out":
+        opacityMultiplier *= rawProgress;
+        scaleMultiplier *= interpolate(springVal, [0, 1], [1.08, 1]);
         break;
+      case "pop-spring":
+        opacityMultiplier *= Math.min(1, rawProgress * 1.4);
+        scaleMultiplier *= interpolate(springVal, [0, 1], [0.88, 1]);
+        break;
+      case "blur-in":
+        opacityMultiplier *= rawProgress;
+        blurPx += interpolate(rawProgress, [0, 1], [10, 0]);
+        break;
+      case "whip-left": {
+        const whip = evaluateEasing(enter.easing || "whip", rawProgress);
+        opacityMultiplier *= Math.min(1, rawProgress * 2.2);
+        translateX += (1 - whip) * -420;
+        blurPx += (1 - Math.abs(rawProgress * 2 - 1)) * 14;
+        break;
+      }
+      case "whip-right": {
+        const whip = evaluateEasing(enter.easing || "whip", rawProgress);
+        opacityMultiplier *= Math.min(1, rawProgress * 2.2);
+        translateX += (1 - whip) * 420;
+        blurPx += (1 - Math.abs(rawProgress * 2 - 1)) * 14;
+        break;
+      }
+      case "whip-up": {
+        const whip = evaluateEasing(enter.easing || "whip", rawProgress);
+        opacityMultiplier *= Math.min(1, rawProgress * 2.2);
+        translateY += (1 - whip) * 320;
+        blurPx += (1 - Math.abs(rawProgress * 2 - 1)) * 12;
+        break;
+      }
+      case "3d-flip-x": {
+        opacityMultiplier *= Math.min(1, rawProgress * 2);
+        rotateX += (1 - easedProgress) * -85;
+        translateZ += (1 - easedProgress) * -280;
+        break;
+      }
+      case "3d-flip-y": {
+        opacityMultiplier *= Math.min(1, rawProgress * 2);
+        rotateY += (1 - easedProgress) * 85;
+        translateZ += (1 - easedProgress) * -280;
+        break;
+      }
+      case "3d-fly-through": {
+        opacityMultiplier *= Math.min(1, rawProgress * 1.8);
+        translateZ += (1 - easedProgress) * -950;
+        rotateX += (1 - easedProgress) * 18;
+        scaleMultiplier *= interpolate(easedProgress, [0, 1], [0.45, 1]);
+        blurPx += (1 - easedProgress) * 10;
+        break;
+      }
+      case "kinetic-slam": {
+        opacityMultiplier *= Math.min(1, rawProgress * 2.8);
+        scaleMultiplier *= interpolate(stompSpring, [0, 1], [2.1, 1]);
+        translateZ += (1 - stompSpring) * 320;
+        blurPx += Math.max(0, (1 - rawProgress * 1.6) * 12);
+        break;
+      }
+      case "elastic-stomp": {
+        const el = evaluateEasing(enter.easing || "elastic", rawProgress);
+        opacityMultiplier *= Math.min(1, rawProgress * 2.2);
+        scaleMultiplier *= 0.4 + 0.6 * el;
+        translateY += (1 - el) * -90;
+        rotateZ += (1 - el) * -6;
+        break;
+      }
     }
   }
 
@@ -121,11 +196,22 @@ function computeAnimationStyles(
         extrapolateRight: "clamp",
       }
     );
+    const easedExit = evaluateEasing(exit.easing || "expo-in", exitProgress);
     opacityMultiplier *= 1 - exitProgress;
-    if (exit.type === "slide-down") {
-      translateY += interpolate(exitProgress, [0, 1], [0, 20]);
+    if (exit.type === "slide-down" || exit.type === "whip-up") {
+      translateY += interpolate(easedExit, [0, 1], [0, 60]);
+    } else if (exit.type === "whip-left") {
+      translateX += interpolate(easedExit, [0, 1], [0, -340]);
+      blurPx += easedExit * 12;
+    } else if (exit.type === "whip-right") {
+      translateX += interpolate(easedExit, [0, 1], [0, 340]);
+      blurPx += easedExit * 12;
+    } else if (exit.type === "3d-fly-through") {
+      translateZ += interpolate(easedExit, [0, 1], [0, 620]);
+      scaleMultiplier *= interpolate(easedExit, [0, 1], [1, 1.5]);
+      blurPx += easedExit * 10;
     } else if (exit.type === "zoom-out") {
-      scaleMultiplier *= interpolate(exitProgress, [0, 1], [1, 0.96]);
+      scaleMultiplier *= interpolate(easedExit, [0, 1], [1, 0.88]);
     }
   }
 
@@ -133,13 +219,17 @@ function computeAnimationStyles(
     opacityMultiplier,
     translateX,
     translateY,
+    translateZ,
+    rotateX,
+    rotateY,
+    rotateZ,
     scaleMultiplier,
     blurPx,
   };
 }
 
 /**
- * Computes declarative Scene Entrance Transition styles (`shutter-wipe`, `editorial-curtain`, `iris-frame`, `flash-cut`).
+ * Computes declarative Scene Entrance Transition styles (`shutter-wipe`, `editorial-curtain`, `iris-frame`, `flash-cut`, `whip-blur-cut`, `3d-cube-spin`, `glitch-slice`, `zoom-punch`).
  */
 function computeSceneTransitionStyle(
   transition: SceneTransitionEffect | undefined,
@@ -148,15 +238,18 @@ function computeSceneTransitionStyle(
 ): {
   clipPath?: string;
   extraBrightness?: number;
+  extraBlurPx?: number;
+  extraTransform3D?: string;
 } {
   if (!transition || transition === "none") return {};
   const transFrames = Math.max(6, Math.round(fps * 0.45));
   if (localFrame >= transFrames) return {};
 
+  const rawT = localFrame / Math.max(1, transFrames);
   const p = spring({
     frame: localFrame,
     fps,
-    config: { damping: 20, stiffness: 140 },
+    config: { damping: 20, stiffness: 150 },
   });
 
   switch (transition) {
@@ -182,13 +275,48 @@ function computeSceneTransitionStyle(
       });
       return { extraBrightness: flash };
     }
+    case "whip-blur-cut": {
+      const whip = evaluateEasing("whip", rawT);
+      const tx = (1 - whip) * -280;
+      const blur = (1 - Math.abs(rawT * 2 - 1)) * 18;
+      return {
+        extraBlurPx: blur,
+        extraTransform3D: `translate3d(${tx.toFixed(1)}px, 0px, 0px) skewX(${((1 - whip) * -12).toFixed(1)}deg)`,
+      };
+    }
+    case "3d-cube-spin": {
+      const rotY = (1 - p) * -88;
+      const tz = (1 - p) * -320;
+      return {
+        extraTransform3D: `rotateY(${rotY.toFixed(1)}deg) translateZ(${tz.toFixed(1)}px)`,
+      };
+    }
+    case "zoom-punch": {
+      const punch = evaluateEasing("back-out", rawT);
+      const sc = 1.65 - 0.65 * punch;
+      const blur = Math.max(0, (1 - rawT * 1.5) * 12);
+      return {
+        extraBlurPx: blur,
+        extraBrightness: 1 + (1 - rawT) * 0.35,
+        extraTransform3D: `scale(${sc.toFixed(3)})`,
+      };
+    }
+    case "glitch-slice": {
+      const jitterX = Math.sin(localFrame * 9.3) * (1 - rawT) * 28;
+      const topInset = ((localFrame * 17) % 35) * (1 - rawT);
+      return {
+        extraBrightness: localFrame % 2 === 0 ? 1.35 : 0.92,
+        extraTransform3D: `translate3d(${jitterX.toFixed(1)}px, 0px, 0px)`,
+        clipPath: `inset(${topInset.toFixed(1)}% 0% 0% 0%)`,
+      };
+    }
     default:
       return {};
   }
 }
 
 /**
- * Computes declarative Smart Camera Rig transforms (`cinema-dolly`, `focus-zoom-left`, `focus-zoom-right`, `isometric-3d-frame`).
+ * Computes declarative Smart 2D & 3D Camera Rig transforms (`cinema-dolly`, `focus-zoom-left`, `focus-zoom-right`, `isometric-3d-frame`, `orbit-3d-left`, `orbit-3d-right`, `fly-through-z`, `whip-pan-3d`, `dutch-roll-impact`, `hyper-push-in`).
  */
 function computeCameraRigStyle(
   cameraMotion: CameraMotionEffect | undefined,
@@ -252,6 +380,68 @@ function computeCameraRigStyle(
         transform: `perspective(1600px) rotateY(${rotY.toFixed(2)}deg) rotateX(${rotX.toFixed(2)}deg) scale(0.84)`,
         isFramed3D: true,
         isLetterbox: false,
+      };
+    }
+    case "orbit-3d-left": {
+      const eased = evaluateEasing("ease-in-out", progress);
+      const rotY = interpolate(eased, [0, 1], [-22, 14]);
+      const rotX = interpolate(eased, [0, 1], [10, -4]);
+      const tz = interpolate(eased, [0, 0.5, 1], [-120, 60, -40]);
+      return {
+        transform: `perspective(1400px) translateZ(${tz.toFixed(1)}px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) scale(0.88)`,
+        isFramed3D: true,
+        isLetterbox: false,
+      };
+    }
+    case "orbit-3d-right": {
+      const eased = evaluateEasing("ease-in-out", progress);
+      const rotY = interpolate(eased, [0, 1], [22, -14]);
+      const rotX = interpolate(eased, [0, 1], [8, -6]);
+      const tz = interpolate(eased, [0, 0.5, 1], [-100, 70, -30]);
+      return {
+        transform: `perspective(1400px) translateZ(${tz.toFixed(1)}px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) scale(0.88)`,
+        isFramed3D: true,
+        isLetterbox: false,
+      };
+    }
+    case "fly-through-z": {
+      const whip = evaluateEasing("expo-out", progress);
+      const tz = interpolate(whip, [0, 1], [-520, 140]);
+      const rotZ = interpolate(progress, [0, 1], [-4, 1.5]);
+      return {
+        transform: `perspective(1200px) translateZ(${tz.toFixed(1)}px) rotateZ(${rotZ.toFixed(2)}deg)`,
+        isFramed3D: true,
+        isLetterbox: true,
+      };
+    }
+    case "whip-pan-3d": {
+      const whip = evaluateEasing("whip", Math.min(1, progress * 1.4));
+      const rotY = interpolate(whip, [0, 1], [-38, -4]);
+      const tx = interpolate(whip, [0, 1], [-18, 0]);
+      return {
+        transform: `perspective(1350px) translate3d(${tx.toFixed(2)}%, 0%, 0px) rotateY(${rotY.toFixed(2)}deg) scale(0.88)`,
+        isFramed3D: true,
+        isLetterbox: false,
+      };
+    }
+    case "dutch-roll-impact": {
+      const shake = computeCameraShake(localFrame, fps, 1.2, 16);
+      const rotZ = interpolate(progress, [0, 1], [-7, 2]) + shake.drot;
+      const scale = interpolate(focusSpring, [0, 1], [1.16, 1.02]);
+      return {
+        transform: `perspective(1400px) translate3d(${shake.dx.toFixed(1)}px, ${shake.dy.toFixed(1)}px, 0px) rotateZ(${rotZ.toFixed(2)}deg) scale(${scale.toFixed(3)})`,
+        isFramed3D: true,
+        isLetterbox: true,
+      };
+    }
+    case "hyper-push-in": {
+      const expo = evaluateEasing("whip", progress);
+      const scale = interpolate(expo, [0, 1], [0.86, 1.28]);
+      const rotX = interpolate(expo, [0, 1], [12, 0]);
+      return {
+        transform: `perspective(1300px) rotateX(${rotX.toFixed(2)}deg) scale(${scale.toFixed(3)})`,
+        isFramed3D: true,
+        isLetterbox: true,
       };
     }
     case "letterbox-cinema": {
@@ -728,7 +918,224 @@ const AttachedMotionOverlayRenderer: React.FC<{
     );
   }
 
+  // 6. 3D PARALLAX GRID & DEPTH HORIZON OVERLAY
+  if (overlay.preset === "3d-parallax-grid") {
+    const camZ = (frame * 14) % 120;
+    return (
+      <AbsoluteFill
+        style={{
+          pointerEvents: "none",
+          zIndex: 8,
+          perspective: "1100px",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: "-20%",
+            right: "-20%",
+            bottom: "-30%",
+            height: "75%",
+            transform: `rotateX(68deg) translateY(${camZ}px)`,
+            transformOrigin: "center top",
+            backgroundImage: `linear-gradient(to right, ${palette.border} 1px, transparent 1px), linear-gradient(to bottom, ${palette.border} 1px, transparent 1px)`,
+            backgroundSize: "120px 120px",
+            opacity: 0.45,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: 42,
+            right: 52,
+            padding: "6px 14px",
+            backgroundColor: palette.surfaceBg,
+            border: `1px solid ${palette.accent}`,
+            borderRadius: radiusPx,
+            fontFamily: typography.monoFont,
+            fontSize: 13,
+            fontWeight: 700,
+            color: palette.accent,
+          }}
+        >
+          {overlay.title || "3D STAGE PARALLAX • Z-DEPTH RIG"}
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
   return null;
+};
+
+/**
+ * Deterministic Frame-Locked WebGL / 3D Canvas Stage Renderer.
+ * Projects 3D vertices (Icosahedron / Torus / Prism / 3D Particle Field) with true perspective
+ * projection, Z-depth sorting, and camera orbit synced purely to `frame`.
+ */
+const ProceduralWebGL3DCanvas: React.FC<{
+  mode: string;
+  frame: number;
+  fps: number;
+  palette: DesignDirectionPreset["palette"];
+}> = ({ mode, frame, fps, palette }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const t = frame / Math.max(1, fps);
+    const rotY = t * 0.85;
+    const rotX = Math.sin(t * 0.7) * 0.42 + 0.25;
+    const rotZ = Math.cos(t * 0.45) * 0.18;
+
+    const project3D = (x: number, y: number, z: number) => {
+      // Rotate Y
+      const x1 = x * Math.cos(rotY) - z * Math.sin(rotY);
+      const z1 = z * Math.cos(rotY) + x * Math.sin(rotY);
+      // Rotate X
+      const y2 = y * Math.cos(rotX) - z1 * Math.sin(rotX);
+      const z2 = z1 * Math.cos(rotX) + y * Math.sin(rotX);
+      // Rotate Z
+      const x3 = x1 * Math.cos(rotZ) - y2 * Math.sin(rotZ);
+      const y3 = y2 * Math.cos(rotZ) + x1 * Math.sin(rotZ);
+
+      const fov = 560;
+      const viewerDist = 680;
+      const scale = fov / Math.max(80, viewerDist + z2);
+      return {
+        sx: w / 2 + x3 * scale,
+        sy: h / 2 + y3 * scale,
+        z: z2,
+        scale,
+      };
+    };
+
+    // Draw subtle 3D floor grid in perspective
+    ctx.strokeStyle = palette.border;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.35;
+    for (let gx = -420; gx <= 420; gx += 84) {
+      const p1 = project3D(gx, 210, -360);
+      const p2 = project3D(gx, 210, 360);
+      ctx.beginPath();
+      ctx.moveTo(p1.sx, p1.sy);
+      ctx.lineTo(p2.sx, p2.sy);
+      ctx.stroke();
+    }
+    for (let gz = -360; gz <= 360; gz += 90) {
+      const zShift = ((gz + frame * 5) % 720) - 360;
+      const p1 = project3D(-420, 210, zShift);
+      const p2 = project3D(420, 210, zShift);
+      ctx.beginPath();
+      ctx.moveTo(p1.sx, p1.sy);
+      ctx.lineTo(p2.sx, p2.sy);
+      ctx.stroke();
+    }
+
+    // Generate 3D geometry vertices & edges
+    const vertices: Array<[number, number, number]> = [];
+    const edges: Array<[number, number]> = [];
+
+    if (mode.includes("tunnel") || mode.includes("fly")) {
+      // 3D Concentric Portal Rings flying toward camera
+      const rings = 7;
+      const segs = 8;
+      for (let r = 0; r < rings; r++) {
+        const zDepth = (((r * 130 - frame * 11) % 910) + 910) % 910 - 455;
+        const rad = 180 + Math.sin(r + t * 2) * 24;
+        const baseIdx = vertices.length;
+        for (let s = 0; s < segs; s++) {
+          const ang = (s / segs) * Math.PI * 2;
+          vertices.push([Math.cos(ang) * rad, Math.sin(ang) * rad, zDepth]);
+          edges.push([baseIdx + s, baseIdx + ((s + 1) % segs)]);
+        }
+      }
+    } else {
+      // Octahedral / Geodesic 3D Core + Orbiting Satellite Nodes
+      const phi = (1 + Math.sqrt(5)) / 2;
+      const rScale = 128;
+      const rawIco: Array<[number, number, number]> = [
+        [-1, phi, 0],
+        [1, phi, 0],
+        [-1, -phi, 0],
+        [1, -phi, 0],
+        [0, -1, phi],
+        [0, 1, phi],
+        [0, -1, -phi],
+        [0, 1, -phi],
+        [phi, 0, -1],
+        [phi, 0, 1],
+        [-phi, 0, -1],
+        [-phi, 0, 1],
+      ];
+      for (const [vx, vy, vz] of rawIco) {
+        vertices.push([vx * rScale, vy * rScale, vz * rScale]);
+      }
+      for (let i = 0; i < vertices.length; i++) {
+        for (let j = i + 1; j < vertices.length; j++) {
+          const dx = vertices[i][0] - vertices[j][0];
+          const dy = vertices[i][1] - vertices[j][1];
+          const dz = vertices[i][2] - vertices[j][2];
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < rScale * 2.15) {
+            edges.push([i, j]);
+          }
+        }
+      }
+    }
+
+    const projected = vertices.map(([vx, vy, vz]) => project3D(vx, vy, vz));
+
+    // Draw wireframe edges with depth-based alpha
+    for (let eIdx = 0; eIdx < edges.length; eIdx++) {
+      const [a, b] = edges[eIdx];
+      const pa = projected[a];
+      const pb = projected[b];
+      if (!pa || !pb) continue;
+      const avgZ = (pa.z + pb.z) * 0.5;
+      const depthAlpha = Math.max(0.14, Math.min(0.85, (420 - avgZ) / 680));
+      ctx.globalAlpha = depthAlpha;
+      ctx.strokeStyle = eIdx % 5 === 0 ? palette.accent : palette.textMuted;
+      ctx.lineWidth = eIdx % 5 === 0 ? 2 : 1.1;
+      ctx.beginPath();
+      ctx.moveTo(pa.sx, pa.sy);
+      ctx.lineTo(pb.sx, pb.sy);
+      ctx.stroke();
+    }
+
+    // Draw 3D vertex nodes
+    for (let i = 0; i < projected.length; i++) {
+      const p = projected[i];
+      const isAccent = i % 3 === 0;
+      ctx.globalAlpha = Math.max(0.25, Math.min(0.95, (420 - p.z) / 650));
+      ctx.fillStyle = isAccent ? palette.accent : palette.textPrimary;
+      const radius = Math.max(2, (isAccent ? 4.5 : 2.8) * p.scale);
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }, [mode, frame, fps, palette]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={960}
+      height={540}
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "block",
+      }}
+    />
+  );
 };
 
 /**
@@ -755,7 +1162,7 @@ function resolveResponsiveLayout(
   let y = clip.transform.y ?? 0;
   let scale = clip.transform.scale ?? 1;
   let widthPct = clip.transform.width;
-  let heightPct = clip.transform.height;
+  const heightPct = clip.transform.height;
 
   // Smart Camera Mode: "split-stage-left" automatically docks the video/image into the left column on 16:9!
   if (
@@ -846,7 +1253,10 @@ function resolveResponsiveLayout(
       clip.shapeVariant === "bento-grid" ||
       clip.shapeVariant === "spotlight-callout" ||
       clip.shapeVariant === "process-stepper" ||
-      clip.shapeVariant === "split-comparison";
+      clip.shapeVariant === "split-comparison" ||
+      clip.shapeVariant === "3d-carousel-stack" ||
+      clip.shapeVariant === "kinetic-impact-wall" ||
+      clip.shapeVariant === "3d-wireframe-prism";
 
     if (isHeroWidget) {
       if (isPortrait) {
@@ -1067,10 +1477,11 @@ const ImageClipRenderer: React.FC<{
 };
 
 /**
- * Normal Video Footage + Procedural Screen-Capture Footage Renderer with:
+ * Normal Video Footage + Procedural Screen-Capture & WebGL 3D Stage Renderer with:
  * - Frame-locked HTML5 `<video>` playback
- * - Smart Camera Rig (`cinema-dolly`, `focus-zoom-left`, `isometric-3d-frame`, `split-stage-left`, `letterbox-cinema`)
- * - Zero-Effort Attached Motion Overlays (`spotlight-pointer`, `hud-telemetry`, `lower-chyron`, `step-annotations`, `split-compare`)
+ * - Frame-locked WebGL / 3D wireframe stage (`procedural-video://webgl-3d-prism`, `procedural-video://webgl-3d-tunnel`)
+ * - Smart Camera Rig (`cinema-dolly`, `focus-zoom-left`, `isometric-3d-frame`, `orbit-3d-left`, `fly-through-z`, `whip-pan-3d`, `hyper-push-in`)
+ * - Zero-Effort Attached Motion Overlays (`spotlight-pointer`, `hud-telemetry`, `lower-chyron`, `step-annotations`, `split-compare`, `3d-parallax-grid`)
  */
 const VideoClipRenderer: React.FC<{
   clip: VideoClip;
@@ -1085,6 +1496,13 @@ const VideoClipRenderer: React.FC<{
 
   const isProceduralVideo =
     !clip.src || clip.src.startsWith("procedural-video://");
+  const isWebGL3DScene =
+    clip.src?.startsWith("procedural-video://webgl-3d") ||
+    clip.cameraMotion === "orbit-3d-left" ||
+    clip.cameraMotion === "orbit-3d-right" ||
+    clip.cameraMotion === "fly-through-z" ||
+    clip.cameraMotion === "whip-pan-3d" ||
+    clip.cameraMotion === "hyper-push-in";
 
   // Keep HTML5 <video> element synchronized with the deterministic frame clock
   useEffect(() => {
@@ -1159,6 +1577,22 @@ const VideoClipRenderer: React.FC<{
               objectFit: clip.objectFit || "cover",
             }}
           />
+        ) : isWebGL3DScene ? (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              backgroundColor: palette.canvasBg,
+              position: "relative",
+            }}
+          >
+            <ProceduralWebGL3DCanvas
+              mode={clip.src || "webgl-3d-prism"}
+              frame={frame}
+              fps={fps}
+              palette={palette}
+            />
+          </div>
         ) : (
           /* Clean Recessed Procedural Video Canvas (Purely graphical waveform + node wireframe, zero competing background text!) */
           <div
@@ -1323,7 +1757,13 @@ const VideoClipRenderer: React.FC<{
 };
 
 /**
- * Editorial Typography Renderer
+ * Editorial & High-Tempo 3D Kinetic Typography Renderer
+ * Supports:
+ * - `none` / `typewriter`
+ * - `kinetic-char-3d` (Per-word/character 3D rotateX/translateZ cascade with whip velocity)
+ * - `kinetic-word-stomp` (High-energy sequential word stomp with scale impact)
+ * - `split-mask-reveal` (Editorial architectural baseline mask reveal)
+ * - `glitch-decode` (Deterministic cipher decode into crisp headline)
  */
 const TextClipRenderer: React.FC<{
   clip: TextClip;
@@ -1331,22 +1771,173 @@ const TextClipRenderer: React.FC<{
   direction: DesignDirectionPreset;
 }> = ({ clip, durationInFrames, direction }) => {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const s = clip.style;
   const { palette, typography, radiusPx } = direction;
-
-  let displayedText = clip.text;
-  if (clip.textEffect === "typewriter") {
-    const revealEnd = Math.max(10, Math.round(durationInFrames * 0.55));
-    const charCount = Math.floor(
-      interpolate(frame, [0, revealEnd], [0, clip.text.length], {
-        extrapolateLeft: "clamp",
-        extrapolateRight: "clamp",
-      })
-    );
-    displayedText = clip.text.slice(0, charCount);
-  }
-
   const align = s.textAlign || "left";
+  const effect = clip.textEffect || "none";
+
+  const words = (clip.text || "").split(/\s+/).filter(Boolean);
+
+  const renderKineticContent = () => {
+    if (effect === "typewriter") {
+      const revealEnd = Math.max(10, Math.round(durationInFrames * 0.55));
+      const charCount = Math.floor(
+        interpolate(frame, [0, revealEnd], [0, clip.text.length], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      );
+      return clip.text.slice(0, charCount);
+    }
+
+    if (effect === "glitch-decode") {
+      const glyphs = "01/#XΔΣΞΩ%+=-";
+      const decodeFrames = Math.max(12, Math.round(fps * 0.55));
+      return clip.text
+        .split("")
+        .map((ch, idx) => {
+          if (ch === " ") return " ";
+          const charThreshold = (idx / Math.max(1, clip.text.length)) * decodeFrames;
+          if (frame >= charThreshold + 4) return ch;
+          if (frame < charThreshold - 3) return "";
+          return glyphs[(frame * 7 + idx * 13) % glyphs.length];
+        })
+        .join("");
+    }
+
+    if (effect === "kinetic-char-3d") {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            flexWrap: "wrap",
+            gap: "0.24em",
+            perspective: "900px",
+            transformStyle: "preserve-3d",
+          }}
+        >
+          {words.map((word, wIdx) => {
+            const delay = wIdx * 2;
+            const localF = Math.max(0, frame - delay);
+            const rawT = Math.min(1, localF / Math.max(6, Math.round(fps * 0.38)));
+            const eased = evaluateEasing("back-out", rawT);
+            const rotX = (1 - eased) * -88;
+            const tz = (1 - eased) * -140;
+            const ty = (1 - eased) * 28;
+            const isFocalWord = wIdx === words.length - 1 && words.length > 2;
+            return (
+              <span
+                key={wIdx}
+                style={{
+                  display: "inline-block",
+                  opacity: Math.min(1, rawT * 2.2),
+                  transform: `translate3d(0px, ${ty.toFixed(1)}px, ${tz.toFixed(1)}px) rotateX(${rotX.toFixed(1)}deg)`,
+                  transformOrigin: "center bottom",
+                  color: isFocalWord ? palette.accent : palette.textPrimary,
+                }}
+              >
+                {word}
+              </span>
+            );
+          })}
+        </span>
+      );
+    }
+
+    if (effect === "kinetic-word-stomp") {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            flexWrap: "wrap",
+            gap: "0.24em",
+          }}
+        >
+          {words.map((word, wIdx) => {
+            const delay = wIdx * 3;
+            const localF = Math.max(0, frame - delay);
+            const stomp = spring({
+              frame: localF,
+              fps,
+              config: { damping: 12, stiffness: 250, mass: 0.7 },
+            });
+            const scaleVal = localF === 0 ? 2.2 : 2.2 - 1.2 * stomp;
+            const opVal = Math.min(1, localF / 3);
+            const isAccent = wIdx === 0 || wIdx === words.length - 1;
+            return (
+              <span
+                key={wIdx}
+                style={{
+                  display: "inline-block",
+                  opacity: opVal,
+                  transform: `scale(${scaleVal.toFixed(3)})`,
+                  color: isAccent ? palette.accent : palette.textPrimary,
+                }}
+              >
+                {word}
+              </span>
+            );
+          })}
+        </span>
+      );
+    }
+
+    if (effect === "split-mask-reveal") {
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            flexWrap: "wrap",
+            gap: "0.24em",
+          }}
+        >
+          {words.map((word, wIdx) => {
+            const delay = wIdx * 2;
+            const localF = Math.max(0, frame - delay);
+            const rawT = Math.min(1, localF / Math.max(6, Math.round(fps * 0.35)));
+            const whip = evaluateEasing("expo-out", rawT);
+            const yPct = (1 - whip) * 105;
+            return (
+              <span
+                key={wIdx}
+                style={{
+                  display: "inline-block",
+                  overflow: "hidden",
+                  verticalAlign: "bottom",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    transform: `translateY(${yPct.toFixed(1)}%)`,
+                  }}
+                >
+                  {word}
+                </span>
+              </span>
+            );
+          })}
+        </span>
+      );
+    }
+
+    if (effect === "gradient") {
+      return (
+        <span
+          style={{
+            backgroundImage: `linear-gradient(95deg, ${s.color || palette.textPrimary} 0%, ${palette.accent} 100%)`,
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+          }}
+        >
+          {clip.text}
+        </span>
+      );
+    }
+
+    return clip.text;
+  };
 
   return (
     <div
@@ -1374,10 +1965,12 @@ const TextClipRenderer: React.FC<{
           fontWeight: s.fontWeight || "700",
           letterSpacing: typography.headlineTracking,
           lineHeight: s.lineHeight || 1.08,
-          color: palette.textPrimary,
+          color: s.color || palette.textPrimary,
+          textShadow:
+            effect === "neon-glow" ? `0 0 18px ${palette.accent}66` : undefined,
         }}
       >
-        {displayedText}
+        {renderKineticContent()}
       </div>
       {clip.subtext && (
         <div
@@ -1413,6 +2006,9 @@ const CaptionClipRenderer: React.FC<{
   const { fps } = useVideoConfig();
   const localSec = frame / fps;
   const { palette, typography, radiusPx } = direction;
+  const activeAccent = clip.highlightColor || palette.accent;
+  const isCinematic = clip.preset === "cinematic";
+  const isTikTokPop = clip.preset === "tiktok-pop";
 
   const words =
     clip.words && clip.words.length > 0
@@ -1433,12 +2029,13 @@ const CaptionClipRenderer: React.FC<{
         flexWrap: "wrap",
         justifyContent: "center",
         alignItems: "center",
-        gap: "6px 8px",
-        maxWidth: "78%",
-        padding: "10px 22px",
-        backgroundColor: palette.surfaceBg,
-        borderRadius: radiusPx,
+        gap: isCinematic ? "8px 12px" : "6px 8px",
+        maxWidth: "82%",
+        padding: isCinematic ? "12px 28px" : "10px 22px",
+        backgroundColor: clip.backgroundColor || palette.surfaceBg,
+        borderRadius: isCinematic ? 2 : radiusPx,
         border: `1px solid ${palette.border}`,
+        borderBottom: isCinematic ? `2px solid ${activeAccent}` : undefined,
       }}
     >
       {words.map((w, i) => {
@@ -1450,17 +2047,23 @@ const CaptionClipRenderer: React.FC<{
             key={`${w.word}-${i}`}
             style={{
               display: "inline-block",
-              fontFamily: typography.bodyFont,
-              fontSize: `${Math.min(clip.fontSize || 32, 34)}px`,
-              fontWeight: isActive ? "700" : "500",
+              fontFamily: isCinematic
+                ? typography.displayFont
+                : typography.bodyFont,
+              fontSize: `${Math.min(clip.fontSize || 32, 36)}px`,
+              fontWeight: isActive ? "800" : "500",
+              letterSpacing: isCinematic ? "0.04em" : undefined,
+              textTransform: isCinematic ? "uppercase" : undefined,
               color: isActive
                 ? palette.accentContrast
                 : isPast
-                  ? palette.textPrimary
+                  ? clip.textColor || palette.textPrimary
                   : palette.textMuted,
-              backgroundColor: isActive ? palette.accent : "transparent",
+              backgroundColor: isActive ? activeAccent : "transparent",
               padding: isActive ? "2px 8px" : "2px 3px",
               borderRadius: Math.max(2, radiusPx - 2),
+              transform:
+                isTikTokPop && isActive ? "scale(1.08)" : "scale(1)",
             }}
           >
             {w.word}
@@ -1488,6 +2091,7 @@ const ShapeClipRenderer: React.FC<{
     }
   );
   const { palette, typography, radiusPx } = direction;
+  const accentColor = clip.accentColor || palette.accent;
 
   // 1. PROGRESS BAR
   if (clip.shapeVariant === "progress-bar") {
@@ -1504,7 +2108,7 @@ const ShapeClipRenderer: React.FC<{
           style={{
             width: `${progress * 100}%`,
             height: "100%",
-            backgroundColor: palette.accent,
+            backgroundColor: accentColor,
           }}
         />
       </div>
@@ -1522,7 +2126,7 @@ const ShapeClipRenderer: React.FC<{
           padding: "8px 16px",
           backgroundColor: palette.surfaceBg,
           border: `1px solid ${palette.border}`,
-          borderLeft: `3px solid ${palette.accent}`,
+          borderLeft: `3px solid ${accentColor}`,
           borderRadius: radiusPx,
         }}
       >
@@ -1561,7 +2165,7 @@ const ShapeClipRenderer: React.FC<{
         <div
           style={{
             width: 6,
-            backgroundColor: palette.accent,
+            backgroundColor: accentColor,
           }}
         />
         <div style={{ padding: "16px 24px" }}>
@@ -1690,7 +2294,7 @@ const ShapeClipRenderer: React.FC<{
             style={{
               fontFamily: typography.monoFont,
               fontSize: 14,
-              color: palette.accent,
+              color: accentColor,
               padding: "4px 10px",
               backgroundColor: palette.surfaceAltBg,
               border: `1px solid ${palette.border}`,
@@ -1722,8 +2326,8 @@ const ShapeClipRenderer: React.FC<{
                 style={{
                   padding: "18px 16px",
                   backgroundColor: palette.surfaceAltBg,
-                  border: `1px solid ${isActive ? palette.accent : palette.border}`,
-                  borderTop: `3px solid ${isActive ? palette.accent : palette.border}`,
+                  border: `1px solid ${isActive ? accentColor : palette.border}`,
+                  borderTop: `3px solid ${isActive ? accentColor : palette.border}`,
                   borderRadius: radiusPx,
                   opacity: Math.max(0.25, stepSpring),
                   transform: `translateY(${interpolate(stepSpring, [0, 1], [12, 0])}px)`,
@@ -1738,7 +2342,7 @@ const ShapeClipRenderer: React.FC<{
                     fontFamily: typography.monoFont,
                     fontSize: 14,
                     fontWeight: 700,
-                    color: isActive ? palette.accent : palette.textMuted,
+                    color: isActive ? accentColor : palette.textMuted,
                   }}
                 >
                   STAGE {sItem.step || `0${idx + 1}`}
@@ -1843,7 +2447,7 @@ const ShapeClipRenderer: React.FC<{
           style={{
             padding: "26px 28px",
             backgroundColor: palette.surfaceBg,
-            borderTop: `3px solid ${palette.accent}`,
+            borderTop: `3px solid ${accentColor}`,
             display: "flex",
             flexDirection: "column",
             gap: 12,
@@ -1854,7 +2458,7 @@ const ShapeClipRenderer: React.FC<{
               fontFamily: typography.monoFont,
               fontSize: 14,
               fontWeight: 700,
-              color: palette.accent,
+              color: accentColor,
             }}
           >
             AFTER • DECLARATIVE MOTION RIG
@@ -1970,7 +2574,7 @@ const ShapeClipRenderer: React.FC<{
                   borderRadius: Math.max(2, radiusPx - 2),
                   backgroundColor: palette.surfaceAltBg,
                   border: `1px solid ${palette.border}`,
-                  color: palette.accent,
+                  color: accentColor,
                   fontSize: 17,
                   fontWeight: 600,
                   fontFamily: typography.monoFont,
@@ -2013,7 +2617,7 @@ const ShapeClipRenderer: React.FC<{
                   width: 16,
                   height: `${Math.max(12, val * barSpring)}%`,
                   borderRadius: 2,
-                  backgroundColor: isLast ? palette.accent : palette.textMuted,
+                  backgroundColor: isLast ? accentColor : palette.textMuted,
                   opacity: isLast ? 1 : 0.45,
                 }}
               />
@@ -2083,7 +2687,7 @@ const ShapeClipRenderer: React.FC<{
               borderRadius: Math.max(2, radiusPx - 2),
               backgroundColor: palette.surfaceAltBg,
               border: `1px solid ${palette.border}`,
-              color: palette.accent,
+              color: accentColor,
               fontFamily: typography.monoFont,
               fontSize: 15,
               fontWeight: 600,
@@ -2119,7 +2723,7 @@ const ShapeClipRenderer: React.FC<{
                   <span
                     style={{
                       fontFamily: typography.monoFont,
-                      color: isFocal ? palette.accent : palette.textMuted,
+                      color: isFocal ? accentColor : palette.textMuted,
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
@@ -2139,7 +2743,7 @@ const ShapeClipRenderer: React.FC<{
                     style={{
                       width: `${widthVal}%`,
                       height: "100%",
-                      backgroundColor: isFocal ? palette.accent : palette.textMuted,
+                      backgroundColor: isFocal ? accentColor : palette.textMuted,
                       opacity: isFocal ? 1 : 0.55,
                     }}
                   />
@@ -2199,7 +2803,7 @@ const ShapeClipRenderer: React.FC<{
               style={{
                 width: 8,
                 height: 8,
-                backgroundColor: palette.accent,
+                backgroundColor: accentColor,
               }}
             />
             <span
@@ -2243,14 +2847,14 @@ const ShapeClipRenderer: React.FC<{
                 border: `1px solid ${palette.border}`,
                 borderLeft: isUser
                   ? `3px solid ${palette.textMuted}`
-                  : `3px solid ${palette.accent}`,
+                  : `3px solid ${accentColor}`,
               }}
             >
               <div
                 style={{
                   fontSize: 14,
                   fontFamily: typography.monoFont,
-                  color: isUser ? palette.textMuted : palette.accent,
+                  color: isUser ? palette.textMuted : accentColor,
                   fontWeight: 600,
                   marginBottom: 6,
                   letterSpacing: "0.06em",
@@ -2326,7 +2930,7 @@ const ShapeClipRenderer: React.FC<{
               style={{
                 padding: "20px 22px",
                 backgroundColor: palette.surfaceBg,
-                border: `1px solid ${isFocal ? palette.accent : palette.border}`,
+                border: `1px solid ${isFocal ? accentColor : palette.border}`,
                 borderRadius: radiusPx,
                 opacity: Math.min(1, cardSpring * 1.5),
                 display: "flex",
@@ -2356,7 +2960,7 @@ const ShapeClipRenderer: React.FC<{
                     style={{
                       fontSize: 16,
                       fontWeight: 600,
-                      color: isFocal ? palette.accent : palette.textMuted,
+                      color: isFocal ? accentColor : palette.textMuted,
                       fontFamily: typography.monoFont,
                       fontVariantNumeric: "tabular-nums",
                     }}
@@ -2414,7 +3018,7 @@ const ShapeClipRenderer: React.FC<{
               style={{
                 width: 4,
                 height: `${Math.round(wave * 100)}%`,
-                backgroundColor: i % 4 === 0 ? palette.accent : palette.textMuted,
+                backgroundColor: i % 4 === 0 ? accentColor : palette.textMuted,
                 opacity: i % 4 === 0 ? 0.95 : 0.45,
               }}
             />
@@ -2472,7 +3076,7 @@ const ShapeClipRenderer: React.FC<{
               style={{
                 width: 8,
                 height: 8,
-                backgroundColor: palette.accent,
+                backgroundColor: accentColor,
               }}
             />
             <span
@@ -2518,7 +3122,7 @@ const ShapeClipRenderer: React.FC<{
                     line.includes(":") || line.startsWith("POST") || line.startsWith("GET")
                       ? palette.textPrimary
                       : line.startsWith("✓") || line.includes("PASSED")
-                        ? palette.accent
+                        ? accentColor
                         : palette.textMuted,
                   whiteSpace: "pre-wrap",
                 }}
@@ -2546,6 +3150,239 @@ const ShapeClipRenderer: React.FC<{
           <span>
             FRAME {String(frame).padStart(3, "0")}/{String(durationInFrames).padStart(3, "0")}
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  // 14. 3D CAROUSEL STACK ("3d-carousel-stack") — Multi-card Z-depth stack with 3D perspective orbit
+  if (clip.shapeVariant === "3d-carousel-stack") {
+    const cards =
+      clip.bentoItems && clip.bentoItems.length > 0
+        ? clip.bentoItems
+        : [
+            {
+              title: "3D Camera Stage & Z-Depth",
+              subtitle: "Orbit, whip-pan & fly-through across multi-plane Z-space",
+              metric: "Z:-400..+300",
+            },
+            {
+              title: "Velocity Graph Keyframes",
+              subtitle: "Multi-point keyframes with whip, expo-out & elastic curves",
+              metric: "SPEED GRAPH",
+            },
+            {
+              title: "Kinetic Blur & RGB Split",
+              subtitle: "Velocity-driven directional shutter blur & camera impact shake",
+              metric: "30/60 FPS",
+            },
+          ];
+
+    return (
+      <div
+        style={{
+          width: "100%",
+          minHeight: 280,
+          perspective: "1200px",
+          transformStyle: "preserve-3d",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        {cards.slice(0, 3).map((card, idx) => {
+          const delay = idx * 5;
+          const localF = Math.max(0, frame - delay);
+          const rawT = Math.min(1, localF / Math.max(8, Math.round(fps * 0.45)));
+          const whip = evaluateEasing("back-out", rawT);
+          const zOffset = (1 - whip) * -280 + (2 - idx) * 18;
+          const rotY = (1 - whip) * 28 - idx * 3;
+          const rotX = (1 - whip) * -14;
+          const isFront = idx === 0;
+          return (
+            <div
+              key={idx}
+              style={{
+                padding: "20px 24px",
+                backgroundColor: palette.surfaceBg,
+                border: `1px solid ${isFront ? accentColor : palette.border}`,
+                borderLeft: `4px solid ${isFront ? accentColor : palette.border}`,
+                borderRadius: radiusPx,
+                opacity: Math.min(1, rawT * 1.8),
+                transform: `translate3d(${idx * 10}px, 0px, ${zOffset.toFixed(1)}px) rotateY(${rotY.toFixed(1)}deg) rotateX(${rotX.toFixed(1)}deg)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontFamily: typography.displayFont,
+                    fontSize: 23,
+                    fontWeight: 700,
+                    color: palette.textPrimary,
+                  }}
+                >
+                  {card.title}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontFamily: typography.bodyFont,
+                    fontSize: 16,
+                    color: palette.textMuted,
+                  }}
+                >
+                  {card.subtitle}
+                </div>
+              </div>
+              <span
+                style={{
+                  padding: "5px 11px",
+                  borderRadius: radiusPx,
+                  backgroundColor: palette.surfaceAltBg,
+                  border: `1px solid ${isFront ? accentColor : palette.border}`,
+                  fontFamily: typography.monoFont,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: isFront ? accentColor : palette.textMuted,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {card.metric || `LAYER 0${idx + 1}`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // 15. KINETIC IMPACT WALL ("kinetic-impact-wall") — High-tempo rhythmic typography & telemetry wall
+  if (clip.shapeVariant === "kinetic-impact-wall") {
+    const words = (
+      clip.title || "TRUE 3D STAGE • VELOCITY GRAPH • KINETIC MOTION BLUR"
+    )
+      .split(/[•|/]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    return (
+      <div
+        style={{
+          width: "100%",
+          padding: "26px 30px",
+          backgroundColor: palette.surfaceBg,
+          border: `1px solid ${palette.border}`,
+          borderTop: `3px solid ${accentColor}`,
+          borderRadius: radiusPx,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          perspective: "1000px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontFamily: typography.monoFont,
+            fontSize: 13,
+            color: accentColor,
+            letterSpacing: "0.08em",
+          }}
+        >
+          <span>{clip.subtitle || "HIGH-TEMPO KINETIC SEQUENCE"}</span>
+          <span>F:{String(frame).padStart(3, "0")}</span>
+        </div>
+        {words.map((rowText, idx) => {
+          const delay = idx * 4;
+          const localF = Math.max(0, frame - delay);
+          const rawT = Math.min(1, localF / 10);
+          const whip = evaluateEasing("whip", rawT);
+          const tx = (1 - whip) * (idx % 2 === 0 ? -120 : 120);
+          const isHighlight = idx === words.length - 1;
+          return (
+            <div
+              key={idx}
+              style={{
+                padding: "12px 18px",
+                backgroundColor: isHighlight ? accentColor : palette.surfaceAltBg,
+                color: isHighlight ? palette.accentContrast : palette.textPrimary,
+                borderRadius: Math.max(2, radiusPx - 2),
+                fontFamily: typography.displayFont,
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: "-0.03em",
+                textTransform: "uppercase",
+                opacity: Math.min(1, rawT * 2),
+                transform: `translate3d(${tx.toFixed(1)}px, 0px, 0px)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>{rowText}</span>
+              <span
+                style={{
+                  fontFamily: typography.monoFont,
+                  fontSize: 14,
+                  opacity: 0.8,
+                }}
+              >
+                0{idx + 1}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // 16. 3D WIREFRAME PRISM WIDGET ("3d-wireframe-prism") — Interactive 3D geometry artifact card
+  if (clip.shapeVariant === "3d-wireframe-prism") {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: 310,
+          backgroundColor: palette.surfaceBg,
+          border: `1px solid ${palette.border}`,
+          borderRadius: radiusPx,
+          overflow: "hidden",
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div
+          style={{
+            padding: "10px 18px",
+            backgroundColor: palette.surfaceAltBg,
+            borderBottom: `1px solid ${palette.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontFamily: typography.monoFont,
+            fontSize: 14,
+          }}
+        >
+          <span style={{ color: palette.textPrimary, fontWeight: 700 }}>
+            {clip.title || "WEBGL 3D MESH STAGE"}
+          </span>
+          <span style={{ color: accentColor }}>
+            {clip.subtitle || "6-DOF PERSPECTIVE"}
+          </span>
+        </div>
+        <div style={{ flex: 1, position: "relative" }}>
+          <ProceduralWebGL3DCanvas
+            mode="webgl-3d-prism"
+            frame={frame}
+            fps={fps}
+            palette={palette}
+          />
         </div>
       </div>
     );
@@ -2588,6 +3425,14 @@ const ClipWrapper: React.FC<{
     clip.exitAnimation
   );
 
+  const prevAnim = computeAnimationStyles(
+    Math.max(0, localFrame - 1),
+    durationInFrames,
+    fps,
+    clip.enterAnimation,
+    clip.exitAnimation
+  );
+
   const sceneTrans = computeSceneTransitionStyle(
     clip.sceneTransition,
     localFrame,
@@ -2610,8 +3455,55 @@ const ClipWrapper: React.FC<{
 
   const layout = resolveResponsiveLayout(clip, canvasW, canvasH, sceneContext);
 
-  const canvasOffsetX = isFullCanvasBackdrop ? 0 : (layout.x / 100) * canvasW;
-  const canvasOffsetY = isFullCanvasBackdrop ? 0 : (layout.y / 100) * canvasH;
+  // Evaluate multi-point After Effects keyframe track if present
+  const normProgress = localFrame / Math.max(1, durationInFrames - 1);
+  const prevNormProgress = Math.max(0, localFrame - 1) / Math.max(1, durationInFrames - 1);
+
+  const defaultKfState = {
+    x: layout.x,
+    y: layout.y,
+    z: clip.transform.z ?? 0,
+    scale: layout.scale,
+    rotation: clip.transform.rotation ?? 0,
+    rotateX: clip.transform.rotateX ?? 0,
+    rotateY: clip.transform.rotateY ?? 0,
+    opacity: clip.opacity ?? 1,
+    blur: clip.filter?.blur ?? 0,
+  };
+
+  const kfCurr = evaluateClipKeyframes(clip.keyframes, normProgress, defaultKfState);
+  const kfPrev = evaluateClipKeyframes(clip.keyframes, prevNormProgress, defaultKfState);
+
+  const canvasOffsetX = isFullCanvasBackdrop ? 0 : (kfCurr.x / 100) * canvasW;
+  const canvasOffsetY = isFullCanvasBackdrop ? 0 : (kfCurr.y / 100) * canvasH;
+  const prevCanvasOffsetX = isFullCanvasBackdrop ? 0 : (kfPrev.x / 100) * canvasW;
+  const prevCanvasOffsetY = isFullCanvasBackdrop ? 0 : (kfPrev.y / 100) * canvasH;
+
+  // Compute instantaneous velocity for automatic directional motion blur & RGB split
+  const velocity = computeMotionVelocity(
+    {
+      x: prevCanvasOffsetX + prevAnim.translateX,
+      y: prevCanvasOffsetY + prevAnim.translateY,
+      z: kfPrev.z + prevAnim.translateZ,
+      scale: kfPrev.scale * prevAnim.scaleMultiplier,
+      rotation: kfPrev.rotation + prevAnim.rotateZ,
+      rotateX: kfPrev.rotateX + prevAnim.rotateX,
+      rotateY: kfPrev.rotateY + prevAnim.rotateY,
+    },
+    {
+      x: canvasOffsetX + anim.translateX,
+      y: canvasOffsetY + anim.translateY,
+      z: kfCurr.z + anim.translateZ,
+      scale: kfCurr.scale * anim.scaleMultiplier,
+      rotation: kfCurr.rotation + anim.rotateZ,
+      rotateX: kfCurr.rotateX + anim.rotateX,
+      rotateY: kfCurr.rotateY + anim.rotateY,
+    }
+  );
+
+  // Camera impact shake on clip entrance if configured
+  const shakeIntensity = clip.filter?.cameraShake ?? 0;
+  const shake = computeCameraShake(localFrame, fps, shakeIntensity, 14);
 
   const widthStyle = isFullCanvasBackdrop
     ? "100%"
@@ -2624,11 +3516,17 @@ const ClipWrapper: React.FC<{
       ? `${layout.heightPct}%`
       : "auto";
 
+  const motionBlurMult = clip.filter?.motionBlur ?? (direction.id === "kinetic-3d-keynote" ? 0.6 : 0);
+  const velocityBlurPx = Math.min(16, velocity.speed * 0.08 * motionBlurMult);
+  const totalBlurPx =
+    anim.blurPx +
+    kfCurr.blur +
+    (sceneTrans.extraBlurPx ?? 0) +
+    velocityBlurPx;
+
   const filterParts: string[] = [];
-  if (anim.blurPx > 0.1 || (clip.filter?.blur ?? 0) > 0) {
-    filterParts.push(
-      `blur(${(anim.blurPx + (clip.filter?.blur ?? 0)).toFixed(1)}px)`
-    );
+  if (totalBlurPx > 0.15) {
+    filterParts.push(`blur(${totalBlurPx.toFixed(1)}px)`);
   }
   const brightnessVal =
     (clip.filter?.brightness ?? 1) * (sceneTrans.extraBrightness ?? 1);
@@ -2638,6 +3536,46 @@ const ClipWrapper: React.FC<{
   if (clip.filter?.contrast !== undefined) {
     filterParts.push(`contrast(${clip.filter.contrast})`);
   }
+  if (clip.filter?.saturate !== undefined) {
+    filterParts.push(`saturate(${clip.filter.saturate})`);
+  }
+  if (clip.filter?.grayscale !== undefined) {
+    filterParts.push(`grayscale(${clip.filter.grayscale})`);
+  }
+
+  // Chromatic aberration RGB split shadow on high-velocity movement (directional along velocity vector)
+  const chromaMult =
+    clip.filter?.chromaticAberration ??
+    (direction.id === "kinetic-3d-keynote" ? 0.5 : 0);
+  const chromaShift = Math.min(10, (velocity.speed * 0.08 + 1.5) * chromaMult);
+  const velNorm = Math.max(1, Math.hypot(velocity.vx, velocity.vy));
+  const dirX = Math.abs(velocity.vx) > 0.2 ? velocity.vx / velNorm : 1;
+  const dirY = Math.abs(velocity.vy) > 0.2 ? velocity.vy / velNorm : 0;
+  const chromaDx = chromaShift * dirX;
+  const chromaDy = chromaShift * dirY;
+
+  // Directional motion stretch along velocity vector on high-speed whip transitions
+  const motionStretchX =
+    velocityBlurPx > 1.5 && !isFullCanvasBackdrop
+      ? 1 + Math.min(0.08, Math.abs(velocity.vx) * 0.0008 * motionBlurMult)
+      : 1;
+  const motionStretchY =
+    velocityBlurPx > 1.5 && !isFullCanvasBackdrop
+      ? 1 + Math.min(0.06, Math.abs(velocity.vy) * 0.0008 * motionBlurMult)
+      : 1;
+
+  const finalTx = canvasOffsetX + anim.translateX + shake.dx;
+  const finalTy = canvasOffsetY + anim.translateY + shake.dy;
+  const finalTz = kfCurr.z + anim.translateZ;
+  const finalRotX = kfCurr.rotateX + anim.rotateX;
+  const finalRotY = kfCurr.rotateY + anim.rotateY;
+  const finalRotZ = kfCurr.rotation + anim.rotateZ + shake.drot;
+  const finalScale = kfCurr.scale * anim.scaleMultiplier;
+
+  const baseTransform3D = `perspective(1400px) translate3d(${finalTx.toFixed(1)}px, ${finalTy.toFixed(1)}px, ${finalTz.toFixed(1)}px) rotateX(${finalRotX.toFixed(2)}deg) rotateY(${finalRotY.toFixed(2)}deg) rotateZ(${finalRotZ.toFixed(2)}deg) scale3d(${(finalScale * motionStretchX).toFixed(3)}, ${(finalScale * motionStretchY).toFixed(3)}, 1)`;
+  const combinedTransform = sceneTrans.extraTransform3D
+    ? `${baseTransform3D} ${sceneTrans.extraTransform3D}`
+    : baseTransform3D;
 
   return (
     <AbsoluteFill
@@ -2646,6 +3584,7 @@ const ClipWrapper: React.FC<{
         alignItems: "center",
         justifyContent: "center",
         pointerEvents: "none",
+        transformStyle: "preserve-3d",
       }}
     >
       <div
@@ -2658,10 +3597,19 @@ const ClipWrapper: React.FC<{
           cursor: onSelect ? "pointer" : "default",
           width: widthStyle,
           height: heightStyle,
-          opacity: (clip.opacity ?? 1) * anim.opacityMultiplier,
-          transform: `translate3d(${canvasOffsetX + anim.translateX}px, ${canvasOffsetY + anim.translateY}px, 0) scale(${layout.scale * anim.scaleMultiplier}) rotate(${clip.transform.rotation ?? 0}deg)`,
+          opacity: kfCurr.opacity * anim.opacityMultiplier,
+          transform: combinedTransform,
+          transformStyle: "preserve-3d",
           clipPath: sceneTrans.clipPath,
           filter: filterParts.length > 0 ? filterParts.join(" ") : undefined,
+          textShadow:
+            chromaShift > 0.6 && (clip.type === "text" || clip.type === "caption")
+              ? `${(-chromaDx).toFixed(1)}px ${(-chromaDy).toFixed(1)}px 0px rgba(255, 50, 50, 0.78), ${chromaDx.toFixed(1)}px ${chromaDy.toFixed(1)}px 0px rgba(0, 220, 255, 0.78)`
+              : undefined,
+          boxShadow:
+            chromaShift > 0.8 && clip.type === "shape" && !isFullCanvasBackdrop
+              ? `${(-chromaDx * 0.85).toFixed(1)}px ${(-chromaDy * 0.85).toFixed(1)}px 0px rgba(255, 50, 50, 0.45), ${(chromaDx * 0.85).toFixed(1)}px ${(chromaDy * 0.85).toFixed(1)}px 0px rgba(0, 220, 255, 0.45)`
+              : undefined,
           outline: isSelected ? `2px solid ${direction.palette.accent}` : undefined,
           outlineOffset: isSelected ? "4px" : undefined,
           display: "flex",
@@ -2754,8 +3702,11 @@ export const AGVIComposition: React.FC<AGVICompositionProps> = ({
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: direction.palette.canvasBg,
+        backgroundColor:
+          project.canvas.backgroundColor || direction.palette.canvasBg,
         overflow: "hidden",
+        perspective: "1600px",
+        transformStyle: "preserve-3d",
       }}
     >
       {visibleTracks.map((track) =>

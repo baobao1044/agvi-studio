@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, connection } from "next/server";
 import {
   AgentActionPayload,
   executeAgentAction,
@@ -7,6 +7,11 @@ import {
 import { getAgentSchemaDocumentation } from "@/lib/schema/timeline-schema";
 
 export async function GET() {
+  try {
+    await connection();
+  } catch {
+    // Allow direct in-process unit test invocation outside Next.js request store
+  }
   const snapshot = getStoreSnapshot();
   const docs = getAgentSchemaDocumentation();
   return Response.json({

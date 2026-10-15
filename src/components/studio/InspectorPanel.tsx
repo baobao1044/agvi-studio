@@ -2,14 +2,18 @@
 
 import React from "react";
 import {
+  Activity,
+  Box,
   Check,
   Code2,
   Copy,
   Compass,
+  Plus,
   Sliders,
   Sparkles,
   Trash2,
   Tv,
+  Zap,
 } from "lucide-react";
 import {
   AGVIProject,
@@ -17,13 +21,17 @@ import {
   AspectRatio,
   CameraMotionEffect,
   CaptionPreset,
+  ClipKeyframe,
+  EasingPreset,
   KenBurnsEffect,
+  KineticTextEffect,
   MotionOverlayPreset,
   SceneTransitionEffect,
   ShapeVariant,
   TimelineClip,
   buildAutoCaptionWords,
 } from "@/lib/schema/timeline-schema";
+import { evaluateEasing } from "@/lib/engine/agvi-engine";
 
 interface InspectorPanelProps {
   project: AGVIProject;
@@ -36,6 +44,14 @@ interface InspectorPanelProps {
 
 const ANIMATION_OPTIONS: AnimationType[] = [
   "none",
+  "whip-left",
+  "whip-right",
+  "whip-up",
+  "3d-flip-x",
+  "3d-flip-y",
+  "3d-fly-through",
+  "kinetic-slam",
+  "elastic-stomp",
   "fade",
   "pop-spring",
   "slide-up",
@@ -49,6 +65,10 @@ const ANIMATION_OPTIONS: AnimationType[] = [
 
 const SCENE_TRANSITION_OPTIONS: SceneTransitionEffect[] = [
   "none",
+  "whip-blur-cut",
+  "3d-cube-spin",
+  "zoom-punch",
+  "glitch-slice",
   "shutter-wipe",
   "iris-frame",
   "editorial-curtain",
@@ -57,9 +77,15 @@ const SCENE_TRANSITION_OPTIONS: SceneTransitionEffect[] = [
 
 const CAMERA_MOTION_OPTIONS: CameraMotionEffect[] = [
   "none",
+  "orbit-3d-left",
+  "orbit-3d-right",
+  "fly-through-z",
+  "whip-pan-3d",
+  "dutch-roll-impact",
+  "hyper-push-in",
+  "isometric-3d-frame",
   "focus-zoom-left",
   "focus-zoom-right",
-  "isometric-3d-frame",
   "split-stage-left",
   "letterbox-cinema",
   "cinema-dolly",
@@ -67,6 +93,7 @@ const CAMERA_MOTION_OPTIONS: CameraMotionEffect[] = [
 
 const MOTION_OVERLAY_PRESETS: MotionOverlayPreset[] = [
   "none",
+  "3d-parallax-grid",
   "spotlight-pointer",
   "hud-telemetry",
   "step-annotations",
@@ -74,7 +101,32 @@ const MOTION_OVERLAY_PRESETS: MotionOverlayPreset[] = [
   "split-compare",
 ];
 
+const KINETIC_TEXT_EFFECTS: KineticTextEffect[] = [
+  "none",
+  "kinetic-char-3d",
+  "kinetic-word-stomp",
+  "split-mask-reveal",
+  "glitch-decode",
+  "typewriter",
+  "gradient",
+  "neon-glow",
+];
+
+const EASING_OPTIONS: EasingPreset[] = [
+  "whip",
+  "expo-out",
+  "expo-in",
+  "back-out",
+  "elastic",
+  "bounce",
+  "ease-in-out",
+  "linear",
+];
+
 const SHAPE_VARIANTS: ShapeVariant[] = [
+  "3d-carousel-stack",
+  "kinetic-impact-wall",
+  "3d-wireframe-prism",
   "spotlight-callout",
   "process-stepper",
   "split-comparison",
@@ -92,6 +144,19 @@ const SHAPE_VARIANTS: ShapeVariant[] = [
   "gradient-backdrop",
 ];
 
+function buildEasingSvgPath(easing: EasingPreset): string {
+  const pts: string[] = [];
+  const steps = 28;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const v = evaluateEasing(easing, t);
+    const x = (t * 100).toFixed(1);
+    const y = (46 - Math.max(-0.2, Math.min(1.25, v)) * 34).toFixed(1);
+    pts.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
+  }
+  return pts.join(" ");
+}
+
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   project,
   selectedClip,
@@ -101,6 +166,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onUpdateCanvas,
 }) => {
   const [copiedSnippet, setCopiedSnippet] = React.useState(false);
+  const [previewCurve, setPreviewCurve] = React.useState<EasingPreset>("whip");
 
   const handleCopyClipAction = () => {
     if (!selectedClip) return;
@@ -167,14 +233,14 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">FPS</label>
+              <label className="block text-slate-400 mb-1">FPS (30 / 60)</label>
               <input
                 type="number"
                 min="12"
-                max="60"
+                max="120"
                 value={project.canvas.fps}
                 onChange={(e) =>
-                  onUpdateCanvas({ fps: Number(e.target.value) || 30 })
+                  onUpdateCanvas({ fps: Number(e.target.value) || 60 })
                 }
                 className="w-full px-2.5 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-slate-100 font-mono"
               />
@@ -241,6 +307,108 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       </div>
     );
   }
+
+  const keyframes: ClipKeyframe[] = selectedClip.keyframes || [];
+
+  const handleAddKeyframe = () => {
+    const nextOffset =
+      keyframes.length === 0
+        ? 0
+        : keyframes.length === 1
+          ? 1
+          : Number(
+              Math.min(
+                1,
+                (keyframes[keyframes.length - 1]?.offset ?? 0.5) + 0.25
+              ).toFixed(2)
+            );
+    const nextKf: ClipKeyframe = {
+      offset: nextOffset,
+      x: selectedClip.transform.x,
+      y: selectedClip.transform.y,
+      z: selectedClip.transform.z ?? 0,
+      scale: selectedClip.transform.scale,
+      rotateX: selectedClip.transform.rotateX ?? 0,
+      rotateY: selectedClip.transform.rotateY ?? 0,
+      rotation: selectedClip.transform.rotation,
+      opacity: selectedClip.opacity,
+      easing: previewCurve,
+    };
+    onUpdateClip(selectedClip.id, {
+      keyframes: [...keyframes, nextKf],
+    });
+  };
+
+  const handleApply3DWhipPreset = () => {
+    const baseX = selectedClip.transform.x;
+    const baseY = selectedClip.transform.y;
+    const presetKfs: ClipKeyframe[] = [
+      {
+        offset: 0,
+        x: baseX - 24,
+        y: baseY + 10,
+        z: -260,
+        rotateX: 26,
+        rotateY: -32,
+        scale: 0.72,
+        opacity: 0,
+        easing: "whip",
+      },
+      {
+        offset: 0.24,
+        x: baseX,
+        y: baseY,
+        z: 65,
+        rotateX: 2,
+        rotateY: -5,
+        scale: 1.04,
+        opacity: 1,
+        easing: "expo-out",
+      },
+      {
+        offset: 0.85,
+        x: baseX,
+        y: baseY,
+        z: 30,
+        rotateX: 0,
+        rotateY: 4,
+        scale: 1,
+        opacity: 1,
+        easing: "ease-in-out",
+      },
+      {
+        offset: 1,
+        x: baseX + 16,
+        y: baseY,
+        z: 200,
+        rotateX: -12,
+        rotateY: 20,
+        scale: 1.15,
+        opacity: 0,
+        easing: "expo-in",
+      },
+    ];
+    onUpdateClip(selectedClip.id, {
+      keyframes: presetKfs,
+      filter: {
+        ...(selectedClip.filter || {}),
+        motionBlur: 0.7,
+        chromaticAberration: 0.4,
+      },
+    });
+  };
+
+  const handleUpdateKeyframe = (idx: number, patch: Partial<ClipKeyframe>) => {
+    const updated = keyframes.map((kf, i) =>
+      i === idx ? { ...kf, ...patch } : kf
+    );
+    onUpdateClip(selectedClip.id, { keyframes: updated });
+  };
+
+  const handleRemoveKeyframe = (idx: number) => {
+    const updated = keyframes.filter((_, i) => i !== idx);
+    onUpdateClip(selectedClip.id, { keyframes: updated });
+  };
 
   return (
     <div className="w-80 shrink-0 border-l border-slate-800/80 bg-[#0A0E17] flex flex-col overflow-y-auto">
@@ -325,12 +493,15 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           </div>
         </div>
 
-        {/* Quick Canvas Zone Presets + Transform */}
+        {/* 2D + 3D Spatial Transform (x, y, z, scale, rotateX, rotateY, rotation) */}
         <div className="pt-2 border-t border-slate-800/70 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
               <Compass className="w-3.5 h-3.5 text-sky-400" />
-              Canvas Position (`x%`, `y%`)
+              2D / 3D Spatial Transform
+            </span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-lime-400/15 text-lime-300 border border-lime-400/30">
+              6-DOF 3D
             </span>
           </div>
           <div className="grid grid-cols-5 gap-1">
@@ -399,6 +570,30 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               />
             </div>
             <div>
+              <label className="block text-[10px] text-lime-300 mb-1">
+                Z Depth (px)
+              </label>
+              <input
+                type="number"
+                step="10"
+                min="-1200"
+                max="800"
+                value={selectedClip.transform.z ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    transform: {
+                      ...selectedClip.transform,
+                      z: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-2 py-1 rounded bg-slate-900 border border-lime-500/40 text-lime-300 font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            <div>
               <label className="block text-[10px] text-slate-400 mb-1">
                 Scale
               </label>
@@ -416,7 +611,373 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     },
                   })
                 }
-                className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono"
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-lime-300 mb-1">
+                RotX°
+              </label>
+              <input
+                type="number"
+                step="2"
+                value={selectedClip.transform.rotateX ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    transform: {
+                      ...selectedClip.transform,
+                      rotateX: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-lime-300 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-lime-300 mb-1">
+                RotY°
+              </label>
+              <input
+                type="number"
+                step="2"
+                value={selectedClip.transform.rotateY ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    transform: {
+                      ...selectedClip.transform,
+                      rotateY: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-lime-300 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400 mb-1">
+                RotZ°
+              </label>
+              <input
+                type="number"
+                step="2"
+                value={selectedClip.transform.rotation}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    transform: {
+                      ...selectedClip.transform,
+                      rotation: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Multi-Keyframe & Velocity Graph Editor */}
+        <div className="pt-2 border-t border-slate-800/70 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-lime-300 flex items-center gap-1">
+              <Activity className="w-3.5 h-3.5 text-lime-400" />
+              Velocity Graph & Keyframes ({keyframes.length})
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleApply3DWhipPreset}
+                title="Apply 4-point 3D Whip Velocity Curve"
+                className="px-1.5 py-0.5 rounded bg-lime-400/15 hover:bg-lime-400/25 border border-lime-400/40 text-[10px] font-mono text-lime-300 cursor-pointer"
+              >
+                + 3D Whip
+              </button>
+              <button
+                onClick={handleAddKeyframe}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-sky-300 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> Keyframe
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive SVG Velocity Curve Visualizer */}
+          <div className="p-2 rounded-lg bg-[#06080E] border border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-slate-400 font-mono">
+                Curve: <strong className="text-lime-300">{previewCurve}</strong>
+              </span>
+              <select
+                value={previewCurve}
+                onChange={(e) =>
+                  setPreviewCurve(e.target.value as EasingPreset)
+                }
+                className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-lime-300 font-mono"
+              >
+                {EASING_OPTIONS.map((eo) => (
+                  <option key={eo} value={eo}>
+                    {eo}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <svg
+              viewBox="0 0 100 54"
+              className="w-full h-12 rounded bg-slate-950/90 border border-slate-800/80 overflow-visible"
+            >
+              <line
+                x1="0"
+                y1="46"
+                x2="100"
+                y2="46"
+                stroke="#1E293B"
+                strokeWidth="0.7"
+              />
+              <line
+                x1="0"
+                y1="12"
+                x2="100"
+                y2="12"
+                stroke="#1E293B"
+                strokeWidth="0.7"
+                strokeDasharray="2 2"
+              />
+              <path
+                d={buildEasingSvgPath(previewCurve)}
+                fill="none"
+                stroke="#CCFF00"
+                strokeWidth="2"
+              />
+            </svg>
+          </div>
+
+          {keyframes.length > 0 && (
+            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+              {keyframes.map((kf, idx) => (
+                <div
+                  key={idx}
+                  className="p-2 rounded bg-slate-900/90 border border-slate-800 space-y-1.5 text-[10px]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-lime-300 font-semibold">
+                      ◆ KF #{idx + 1} @ {Math.round(kf.offset * 100)}%
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={kf.easing || "whip"}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            easing: e.target.value as EasingPreset,
+                          })
+                        }
+                        className="px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-sky-300 font-mono text-[10px]"
+                      >
+                        {EASING_OPTIONS.map((eo) => (
+                          <option key={eo} value={eo}>
+                            {eo}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleRemoveKeyframe(idx)}
+                        className="p-0.5 rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                        title="Remove keyframe"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    <div>
+                      <span className="text-slate-500 block">Offset</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={kf.offset}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            offset: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">X%</span>
+                      <input
+                        type="number"
+                        step="2"
+                        value={kf.x ?? selectedClip.transform.x}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            x: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Y%</span>
+                      <input
+                        type="number"
+                        step="2"
+                        value={kf.y ?? selectedClip.transform.y}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            y: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Z(px)</span>
+                      <input
+                        type="number"
+                        step="20"
+                        value={kf.z ?? 0}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            z: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-lime-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Scale</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0.1"
+                        max="4"
+                        value={kf.scale ?? selectedClip.transform.scale}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            scale: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">RotX°</span>
+                      <input
+                        type="number"
+                        step="4"
+                        value={kf.rotateX ?? 0}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            rotateX: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-lime-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">RotY°</span>
+                      <input
+                        type="number"
+                        step="4"
+                        value={kf.rotateY ?? 0}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            rotateY: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-lime-300 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Alpha</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={kf.opacity ?? selectedClip.opacity}
+                        onChange={(e) =>
+                          handleUpdateKeyframe(idx, {
+                            opacity: Number(e.target.value),
+                          })
+                        }
+                        className="w-full px-1 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* High-Tempo Post-FX (Motion Blur, Chromatic Aberration, Camera Shake) */}
+        <div className="pt-2 border-t border-slate-800/70 space-y-2">
+          <div className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            High-Tempo Post-Processing FX
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <label className="block text-[10px] text-slate-400 mb-1">
+                Motion Blur
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                value={selectedClip.filter?.motionBlur ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    filter: {
+                      ...(selectedClip.filter || {}),
+                      motionBlur: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-amber-300 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400 mb-1">
+                RGB Shift
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                value={selectedClip.filter?.chromaticAberration ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    filter: {
+                      ...(selectedClip.filter || {}),
+                      chromaticAberration: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-cyan-300 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-slate-400 mb-1">
+                Impact Shake
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="1"
+                value={selectedClip.filter?.cameraShake ?? 0}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    filter: {
+                      ...(selectedClip.filter || {}),
+                      cameraShake: Number(e.target.value),
+                    },
+                  })
+                }
+                className="w-full px-1.5 py-1 rounded bg-slate-900 border border-slate-800 text-rose-300 font-mono"
               />
             </div>
           </div>
@@ -495,7 +1056,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         {selectedClip.type === "text" && (
           <div className="pt-2 border-t border-slate-800/70 space-y-2.5">
             <div className="text-[11px] font-semibold text-purple-300">
-              Typography & Headline Settings
+              Kinetic Typography & 3D Headline Settings
             </div>
             <div>
               <label className="block text-slate-400 mb-1">Headline Text</label>
@@ -523,20 +1084,23 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-slate-400 mb-1">Text Effect</label>
+                <label className="block text-slate-400 mb-1">
+                  Kinetic Text Mode
+                </label>
                 <select
                   value={selectedClip.textEffect || "none"}
                   onChange={(e) =>
                     onUpdateClip(selectedClip.id, {
-                      textEffect: e.target.value,
+                      textEffect: e.target.value as KineticTextEffect,
                     })
                   }
-                  className="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-100"
+                  className="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-lime-300 font-mono"
                 >
-                  <option value="none">none</option>
-                  <option value="gradient">gradient</option>
-                  <option value="neon-glow">neon-glow</option>
-                  <option value="typewriter">typewriter</option>
+                  {KINETIC_TEXT_EFFECTS.map((fx) => (
+                    <option key={fx} value={fx}>
+                      {fx}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -624,15 +1188,18 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         {(selectedClip.type === "video" || selectedClip.type === "image") && (
           <div className="pt-2 border-t border-slate-800/70 space-y-2.5">
             <div className="text-[11px] font-semibold text-orange-400 flex items-center justify-between">
-              <span>Hybrid Video & Motion Compositing</span>
+              <span className="flex items-center gap-1">
+                <Box className="w-3.5 h-3.5 text-lime-400" />
+                3D Stage & Hybrid Video Rig
+              </span>
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">
-                1-Clip Rig
+                6-DOF Rig
               </span>
             </div>
 
             <div>
               <label className="block text-slate-400 mb-1">
-                Video / Surface Source (`src`)
+                3D Stage / Video Source (`src`)
               </label>
               <select
                 value={
@@ -647,8 +1214,17 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 }}
                 className="w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-100 mb-1.5"
               >
+                <option value="procedural-video://webgl-3d-prism">
+                  3D WebGL Stage: Wireframe Icosahedron Prism
+                </option>
+                <option value="procedural-video://webgl-3d-tunnel">
+                  3D WebGL Stage: Z-Space Warp Tunnel
+                </option>
                 <option value="procedural-video://product-ui-capture">
                   Live Video Stream: Product UI Capture
+                </option>
+                <option value="procedural://kinetic-3d-keynote">
+                  Matte Surface: Kinetic 3D Stage
                 </option>
                 <option value="procedural://swiss-industrial">
                   Matte Surface: Swiss Industrial
@@ -678,7 +1254,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-slate-400 mb-1">
-                  Camera Rig (`cameraMotion`)
+                  3D Camera Rig (`cameraMotion`)
                 </label>
                 <select
                   value={selectedClip.cameraMotion || "none"}
@@ -923,7 +1499,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={selectedClip.metricValue || "10.4x"}
+                    value={selectedClip.metricValue || "60 FPS"}
                     onChange={(e) =>
                       onUpdateClip(selectedClip.id, {
                         metricValue: e.target.value,
@@ -938,7 +1514,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={selectedClip.metricTrend || "+340%"}
+                    value={selectedClip.metricTrend || "Deterministic"}
                     onChange={(e) =>
                       onUpdateClip(selectedClip.id, {
                         metricTrend: e.target.value,
@@ -967,6 +1543,115 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {/* Audio Clip Controls */}
+        {selectedClip.type === "audio" && (
+          <div className="space-y-2.5 pt-3 border-t border-slate-800/80">
+            <div className="text-[11px] font-semibold text-amber-300">
+              Audio Track & Synth Configuration
+            </div>
+            <div>
+              <label className="flex justify-between text-slate-400 mb-1">
+                <span>Volume</span>
+                <span className="font-mono text-amber-300">
+                  {Math.round((selectedClip.volume ?? 0.8) * 100)}%
+                </span>
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={selectedClip.volume ?? 0.8}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    volume: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full accent-amber-400"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-slate-400 mb-1">Fade In (s)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={selectedClip.fadeIn ?? 0.3}
+                  onChange={(e) =>
+                    onUpdateClip(selectedClip.id, {
+                      fadeIn: Math.max(0, parseFloat(e.target.value) || 0),
+                    })
+                  }
+                  className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Fade Out (s)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={selectedClip.fadeOut ?? 0.8}
+                  onChange={(e) =>
+                    onUpdateClip(selectedClip.id, {
+                      fadeOut: Math.max(0, parseFloat(e.target.value) || 0),
+                    })
+                  }
+                  className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-slate-400">
+                WebAudio Synth Ambient Track (`synthWave`)
+              </label>
+              <input
+                type="checkbox"
+                checked={selectedClip.synthWave ?? true}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    synthWave: e.target.checked,
+                  })
+                }
+                className="accent-amber-400 cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1">
+                Audio Source (`src`)
+              </label>
+              <input
+                type="text"
+                value={selectedClip.src || ""}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    src: e.target.value,
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-100 font-mono text-[11px]"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1">
+                Audio Transcript / Cue Note
+              </label>
+              <textarea
+                rows={2}
+                value={selectedClip.transcript || ""}
+                onChange={(e) =>
+                  onUpdateClip(selectedClip.id, {
+                    transcript: e.target.value,
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-100"
+              />
+            </div>
           </div>
         )}
 

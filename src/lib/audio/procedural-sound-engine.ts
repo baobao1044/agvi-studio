@@ -92,16 +92,29 @@ class ProceduralSoundEngine {
     for (const track of project.tracks) {
       if (track.hidden || track.muted) continue;
       for (const clip of track.clips) {
-        const clipKey = `${clip.id}-${ Math.round(clip.startTime * 10)}`;
+        const clipKey = `${clip.id}-${Math.round(clip.startTime * 10)}`;
         const delta = currentTime - clip.startTime;
         if (delta >= 0 && delta <= 0.12 && !this.lastTriggeredClips.has(clipKey)) {
           this.lastTriggeredClips.add(clipKey);
-          if (clip.type === "text") {
+          const isHighTempo3DCut =
+            clip.sceneTransition === "whip-blur-cut" ||
+            clip.sceneTransition === "3d-cube-spin" ||
+            clip.sceneTransition === "zoom-punch" ||
+            clip.sceneTransition === "glitch-slice" ||
+            clip.enterAnimation?.type === "kinetic-slam" ||
+            clip.enterAnimation?.type === "3d-fly-through" ||
+            clip.enterAnimation?.type === "whip-left" ||
+            clip.enterAnimation?.type === "whip-right";
+
+          if (isHighTempo3DCut) {
+            this.playSubImpactDrop(ctx);
+          } else if (clip.type === "text") {
             this.playWhooshSfx(ctx, 420, 1200, 0.18);
           } else if (clip.type === "shape") {
             if (
               clip.shapeVariant === "code-card" ||
-              clip.shapeVariant === "badge"
+              clip.shapeVariant === "badge" ||
+              clip.shapeVariant === "3d-wireframe-prism"
             ) {
               this.playTechChime(ctx);
             } else if (clip.shapeVariant !== "progress-bar") {
@@ -268,6 +281,45 @@ class ProceduralSoundEngine {
       osc.start(now + idx * 0.055);
       osc.stop(now + idx * 0.055 + 0.2);
     });
+  }
+
+  public playSubImpactDrop(ctxOrNull?: AudioContext | null) {
+    if (this.isMuted) return;
+    const ctx = ctxOrNull || this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // 1. Sub-bass punch (160Hz -> 32Hz exponential drop)
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = "sine";
+    subOsc.frequency.setValueAtTime(160, now);
+    subOsc.frequency.exponentialRampToValueAtTime(32, now + 0.28);
+
+    subGain.gain.setValueAtTime(0.001, now);
+    subGain.gain.linearRampToValueAtTime(this.volume * 0.28, now + 0.015);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(now);
+    subOsc.stop(now + 0.34);
+
+    // 2. High-tempo whip transient sweep (1800Hz -> 240Hz)
+    const whipOsc = ctx.createOscillator();
+    const whipGain = ctx.createGain();
+    whipOsc.type = "triangle";
+    whipOsc.frequency.setValueAtTime(1800, now);
+    whipOsc.frequency.exponentialRampToValueAtTime(240, now + 0.14);
+
+    whipGain.gain.setValueAtTime(0.001, now);
+    whipGain.gain.linearRampToValueAtTime(this.volume * 0.12, now + 0.01);
+    whipGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+    whipOsc.connect(whipGain);
+    whipGain.connect(ctx.destination);
+    whipOsc.start(now);
+    whipOsc.stop(now + 0.18);
   }
 
   private playWordBlip(ctx: AudioContext, wordIdx: number) {

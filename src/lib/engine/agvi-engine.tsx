@@ -124,6 +124,195 @@ export function interpolate(
   return outMin + t * (outMax - outMin);
 }
 
+export type EasingPreset =
+  | "linear"
+  | "ease-in-out"
+  | "expo-out"
+  | "expo-in"
+  | "whip"
+  | "back-out"
+  | "elastic"
+  | "bounce";
+
+/**
+ * High-tempo After Effects-style Graph Editor easing functions.
+ * "whip" models an aggressive cubic-bezier(0.87, 0, 0.13, 1) speed-peak curve.
+ * "expo-out" models instant kinetic snap settling smoothly.
+ */
+export function evaluateEasing(preset: EasingPreset | undefined, rawT: number): number {
+  const t = Math.max(0, Math.min(1, rawT));
+  if (t === 0 || t === 1) return t;
+  if (!preset || preset === "linear") return t;
+
+  switch (preset) {
+    case "ease-in-out":
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    case "expo-out":
+      return 1 - Math.pow(2, -10 * t);
+    case "expo-in":
+      return Math.pow(2, 10 * t - 10);
+    case "whip": {
+      // Aggressive S-curve with high midpoint velocity (After Effects Speed Graph spike)
+      return t < 0.5
+        ? 8 * t * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 4) / 2;
+    }
+    case "back-out": {
+      const c1 = 1.95;
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    }
+    case "elastic": {
+      const c4 = (2 * Math.PI) / 3.2;
+      return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+    case "bounce": {
+      const n1 = 7.5625;
+      const d1 = 2.75;
+      let x = t;
+      if (x < 1 / d1) {
+        return n1 * x * x;
+      } else if (x < 2 / d1) {
+        return n1 * (x -= 1.5 / d1) * x + 0.75;
+      } else if (x < 2.5 / d1) {
+        return n1 * (x -= 2.25 / d1) * x + 0.9375;
+      } else {
+        return n1 * (x -= 2.625 / d1) * x + 0.984375;
+      }
+    }
+    default:
+      return t;
+  }
+}
+
+export interface KeyframePoint {
+  offset: number;
+  x?: number;
+  y?: number;
+  z?: number;
+  scale?: number;
+  rotation?: number;
+  rotateX?: number;
+  rotateY?: number;
+  opacity?: number;
+  blur?: number;
+  easing?: EasingPreset;
+}
+
+export interface EvaluatedKeyframeTransform {
+  x: number;
+  y: number;
+  z: number;
+  scale: number;
+  rotation: number;
+  rotateX: number;
+  rotateY: number;
+  opacity: number;
+  blur: number;
+}
+
+/**
+ * Evaluates a multi-point keyframe track at normalized progress `p` (0..1)
+ * using per-segment Graph Editor velocity presets (`whip`, `expo-out`, `back-out`, `elastic`, `bounce`).
+ */
+export function evaluateClipKeyframes(
+  keyframes: readonly KeyframePoint[] | undefined,
+  normalizedProgress: number,
+  defaults: EvaluatedKeyframeTransform
+): EvaluatedKeyframeTransform {
+  if (!keyframes || keyframes.length === 0) {
+    return { ...defaults };
+  }
+
+  const sorted = [...keyframes].sort((a, b) => a.offset - b.offset);
+  const p = Math.max(0, Math.min(1, normalizedProgress));
+
+  const resolveProp = (
+    prop: keyof Omit<KeyframePoint, "offset" | "easing">,
+    fallback: number
+  ): number => {
+    const pts = sorted.filter((k) => typeof k[prop] === "number");
+    if (pts.length === 0) return fallback;
+    if (pts.length === 1 || p <= pts[0].offset) return pts[0][prop] as number;
+    const last = pts[pts.length - 1];
+    if (p >= last.offset) return last[prop] as number;
+
+    let segIdx = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (p >= pts[i].offset && p <= pts[i + 1].offset) {
+        segIdx = i;
+        break;
+      }
+    }
+    const k0 = pts[segIdx];
+    const k1 = pts[segIdx + 1];
+    const span = k1.offset - k0.offset;
+    if (span <= 0.0001) return k1[prop] as number;
+    const rawT = (p - k0.offset) / span;
+    const easedT = evaluateEasing(k1.easing || k0.easing || "whip", rawT);
+    const v0 = k0[prop] as number;
+    const v1 = k1[prop] as number;
+    return v0 + easedT * (v1 - v0);
+  };
+
+  return {
+    x: resolveProp("x", defaults.x),
+    y: resolveProp("y", defaults.y),
+    z: resolveProp("z", defaults.z),
+    scale: resolveProp("scale", defaults.scale),
+    rotation: resolveProp("rotation", defaults.rotation),
+    rotateX: resolveProp("rotateX", defaults.rotateX),
+    rotateY: resolveProp("rotateY", defaults.rotateY),
+    opacity: resolveProp("opacity", defaults.opacity),
+    blur: resolveProp("blur", defaults.blur),
+  };
+}
+
+/**
+ * Computes instantaneous motion velocity between `frame - 1` and `frame`
+ * to drive automatic After Effects directional motion blur and RGB chromatic split.
+ */
+export function computeMotionVelocity(
+  prev: { x: number; y: number; z: number; scale: number; rotation: number; rotateX?: number; rotateY?: number },
+  curr: { x: number; y: number; z: number; scale: number; rotation: number; rotateX?: number; rotateY?: number }
+): { vx: number; vy: number; speed: number } {
+  const dx = curr.x - prev.x;
+  const dy = curr.y - prev.y;
+  const dz = (curr.z - prev.z) * 0.04;
+  const dScale = (curr.scale - prev.scale) * 60;
+  const dRot =
+    (curr.rotation - prev.rotation) * 0.4 +
+    ((curr.rotateX ?? 0) - (prev.rotateX ?? 0)) * 0.35 +
+    ((curr.rotateY ?? 0) - (prev.rotateY ?? 0)) * 0.35;
+
+  const vx = dx + dz * 0.5 + dRot * 0.4;
+  const vy = dy + dScale * 0.5;
+  const speed = Math.sqrt(vx * vx + vy * vy + dz * dz + dScale * dScale);
+  return { vx, vy, speed };
+}
+
+/**
+ * Deterministic camera shake / impact impulse generator.
+ * Pure function of frame — produces repeatable high-energy camera impact jitter.
+ */
+export function computeCameraShake(
+  frame: number,
+  fps: number,
+  intensity = 1,
+  decayFrames = 14
+): { dx: number; dy: number; drot: number } {
+  if (intensity <= 0 || frame < 0 || frame >= decayFrames) {
+    return { dx: 0, dy: 0, drot: 0 };
+  }
+  const progress = frame / Math.max(1, decayFrames);
+  const envelope = Math.pow(1 - progress, 2.2) * intensity;
+  const freq = (frame / Math.max(1, fps)) * 55;
+  const dx = Math.sin(freq * 2.1 + 0.7) * 18 * envelope;
+  const dy = Math.cos(freq * 2.7 + 1.3) * 14 * envelope;
+  const drot = Math.sin(freq * 1.8) * 1.6 * envelope;
+  return { dx, dy, drot };
+}
+
 export interface SpringConfig {
   damping?: number;
   stiffness?: number;
